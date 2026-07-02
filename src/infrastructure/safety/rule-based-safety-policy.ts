@@ -48,18 +48,15 @@ const ESCALATION_PATTERNS: readonly EscalationPattern[] = [
   },
   {
     regex:
-      /\b(enferm|sintoma|diagnostic|fiebre|diarrea|infecci|virus|bacteri|peste|convuls|temblor|vomit)\b/,
+      /\b(enferm|sintom|diagnostic|fiebre|diarr|infecci|virus|bacteri|peste|convuls|temblor|vomit)\w*/,
     reason: 'consulta sobre síntomas o diagnóstico de enfermedad',
   },
   {
-    regex: /\b(muerte|muri|murier|morir|mortalidad|aborto|abort)\b/,
+    regex: /\b(muert|muri|morir|mortalidad|abort)\w*/,
     reason: 'consulta sobre mortalidad o aborto',
   },
 ];
 
 function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+  return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
