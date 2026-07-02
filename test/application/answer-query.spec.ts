@@ -69,7 +69,9 @@ describe('AnswerQuery', () => {
       type: 'text',
       text: 'Aliméntala a voluntad durante la lactancia, repartido en 2 o 3 comidas.',
     });
-    expect(deps.retriever.queries).toEqual([{ query: '¿cómo alimento una hembra lactante?', k: 5 }]);
+    expect(deps.retriever.queries).toEqual([
+      { query: '¿cómo alimento una hembra lactante?', k: 5 },
+    ]);
     expect(deps.conversationLog.turns).toHaveLength(1);
     expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
   });

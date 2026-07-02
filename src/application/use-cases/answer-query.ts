@@ -1,4 +1,8 @@
-import type { IncomingMessage, Locale, MessageType } from '../../domain/message/incoming-message.js';
+import type {
+  IncomingMessage,
+  Locale,
+  MessageType,
+} from '../../domain/message/incoming-message.js';
 import type { OutgoingMessage } from '../../domain/message/outgoing-message.js';
 import type { KnowledgeReference } from '../../domain/knowledge/retrieved-chunk.js';
 import { toReference } from '../../domain/knowledge/retrieved-chunk.js';
@@ -56,7 +60,13 @@ export class AnswerQuery {
 
     if (resolved === undefined) {
       await this.sendText(gateway, message, STT_FAILED_MESSAGE);
-      await this.record(message, UNTRANSCRIBED_PLACEHOLDER, STT_FAILED_MESSAGE, 'refuse', startedAt);
+      await this.record(
+        message,
+        UNTRANSCRIBED_PLACEHOLDER,
+        STT_FAILED_MESSAGE,
+        'refuse',
+        startedAt,
+      );
       return;
     }
 
