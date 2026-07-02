@@ -64,12 +64,12 @@ El **dominio y los casos de uso no importan ni conocen** frameworks, proveedores
 
 ### 3.2 SOLID, aterrizado a este proyecto
 
-| Principio | Cómo se aplica aquí |
-|---|---|
-| **S** — Responsabilidad única | Cada clase hace una cosa: `Transcriber` solo transcribe, el caso de uso `AnswerQuery` solo orquesta, el controller solo traduce el webhook. Nada mezcla HTTP con lógica de negocio. |
-| **O** — Abierto/cerrado | Agregar un canal (WhatsApp) o un proveedor (otro TTS) se hace **añadiendo** un adaptador que implementa el puerto, sin **modificar** el núcleo ni los demás adaptadores. |
-| **L** — Sustitución de Liskov | Cualquier implementación de un puerto es intercambiable. Un `FakeTranscriber` en tests se comporta como el real frente al caso de uso. |
-| **I** — Segregación de interfaces | Puertos pequeños y enfocados (`Transcriber`, `SpeechSynthesizer`, `KnowledgeRetriever`…) en lugar de una interfaz "gorda". Un adaptador implementa solo lo que le corresponde. |
+| Principio                         | Cómo se aplica aquí                                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S** — Responsabilidad única     | Cada clase hace una cosa: `Transcriber` solo transcribe, el caso de uso `AnswerQuery` solo orquesta, el controller solo traduce el webhook. Nada mezcla HTTP con lógica de negocio.                     |
+| **O** — Abierto/cerrado           | Agregar un canal (WhatsApp) o un proveedor (otro TTS) se hace **añadiendo** un adaptador que implementa el puerto, sin **modificar** el núcleo ni los demás adaptadores.                                |
+| **L** — Sustitución de Liskov     | Cualquier implementación de un puerto es intercambiable. Un `FakeTranscriber` en tests se comporta como el real frente al caso de uso.                                                                  |
+| **I** — Segregación de interfaces | Puertos pequeños y enfocados (`Transcriber`, `SpeechSynthesizer`, `KnowledgeRetriever`…) en lugar de una interfaz "gorda". Un adaptador implementa solo lo que le corresponde.                          |
 | **D** — Inversión de dependencias | El caso de uso depende de **abstracciones** (puertos), nunca de clases concretas. Las dependencias se **inyectan por constructor**. El cableado ocurre en un único lugar (composition root, sección 7). |
 
 ### 3.3 Reglas de código limpio (no negociables)
@@ -78,7 +78,7 @@ El **dominio y los casos de uso no importan ni conocen** frameworks, proveedores
 - **Sin lógica de negocio en adaptadores.** Un adaptador traduce formatos; no decide.
 - **Sin dependencias "hacia adentro".** El dominio no importa infraestructura. La regla de dependencia siempre apunta hacia el centro: `interfaces → application → domain`. Infraestructura implementa puertos definidos en `application`.
 - **Errores explícitos.** Se usa un tipo `Result<T, E>` para flujos esperables (transcripción vacía, sin resultados de RAG) y excepciones solo para fallos inesperados. Nada de `throw` para control de flujo normal.
-- **Funciones pequeñas, nombres reveladores**, sin comentarios que expliquen *qué* hace el código (que lo diga el nombre); comentarios solo para el *por qué* cuando no es obvio.
+- **Funciones pequeñas, nombres reveladores**, sin comentarios que expliquen _qué_ hace el código (que lo diga el nombre); comentarios solo para el _por qué_ cuando no es obvio.
 - **Inmutabilidad por defecto** en objetos de dominio (value objects `readonly`).
 - **Configuración validada al arranque** (si falta una env var, el proceso no levanta).
 - **Lenguaje ubicuo:** identificadores técnicos en inglés; términos del dominio que son más claros en español se conservan (`porcicultor`, `diasAbiertos`) y se documentan en un glosario.
@@ -260,17 +260,22 @@ Un único lugar (`config/container.ts`) construye los adaptadores concretos y lo
 ```ts
 // config/container.ts (ilustrativo)
 export function buildAnswerQuery(env: Env): AnswerQuery {
-  const transcriber   = new WhisperTranscriber(env.OPENAI_API_KEY);
-  const synthesizer   = new TtsSynthesizer(env.TTS_API_KEY);
-  const embedder      = new LlmEmbedder(env.OPENAI_API_KEY);
-  const retriever     = new PgVectorRetriever(supabaseClient(env), embedder);
-  const generator     = new LlmAnswerGenerator(env.LLM_API_KEY);
-  const safetyPolicy  = new RuleBasedSafetyPolicy();
+  const transcriber = new WhisperTranscriber(env.OPENAI_API_KEY);
+  const synthesizer = new TtsSynthesizer(env.TTS_API_KEY);
+  const embedder = new LlmEmbedder(env.OPENAI_API_KEY);
+  const retriever = new PgVectorRetriever(supabaseClient(env), embedder);
+  const generator = new LlmAnswerGenerator(env.LLM_API_KEY);
+  const safetyPolicy = new RuleBasedSafetyPolicy();
   const conversationLog = new SupabaseConversationLog(supabaseClient(env));
 
   // El gateway se resuelve por canal en el webhook; ver nota abajo.
   return new AnswerQuery({
-    transcriber, synthesizer, retriever, generator, safetyPolicy, conversationLog,
+    transcriber,
+    synthesizer,
+    retriever,
+    generator,
+    safetyPolicy,
+    conversationLog,
   });
 }
 ```
@@ -322,7 +327,7 @@ export interface AnswerGenerator {
 
 // application/ports/safety-policy.ts
 export interface SafetyPolicy {
-  assessQuestion(question: string): SafetyDecision;      // pre-generación (síncrona, barata)
+  assessQuestion(question: string): SafetyDecision; // pre-generación (síncrona, barata)
   reviewAnswer(question: string, draft: string): SafetyDecision; // post-generación (opcional en MVP)
 }
 
@@ -354,21 +359,21 @@ Objetos inmutables, sin comportamiento de infraestructura:
 
 ## 10. Stack tecnológico (decisiones concretas para el MVP)
 
-| Capa | Elección | Razón |
-|---|---|---|
-| Lenguaje | **Node.js + TypeScript `strict`** | Ya es el lenguaje de trabajo; unifica stack; tipado fuerte sostiene los contratos de puertos. |
-| HTTP | **Fastify** (o Express) | Delgado; solo expone webhooks. Es un adaptador de entrada → framework intercambiable. |
-| Canal (piloto) | **WhatsApp Business Cloud API (Meta)** | Es donde **ya está** el productor rural; soporta recibir/enviar audio; tier gratuito para validar. |
-| Canal (dev/test) | **Telegram Bot API** | Fricción cero para probar el pipeline internamente antes de la aprobación de Meta. |
-| STT | **Whisper API** | Excelente en español; robusto a acentos y ruido de campo. |
-| TTS | **OpenAI TTS** o **ElevenLabs** | Voz natural en español. Detrás de puerto → intercambiable. |
-| LLM | **API de un LLM con buen español** (Claude / GPT) vía puerto | Sin fine-tuning: el valor está en el RAG, no en el modelo. |
-| Embeddings | `text-embedding-3-small` (o multilingüe) | Barato, suficiente para el corpus inicial. |
-| Vector store + DB | **Supabase (Postgres + pgvector)** | Corpus vectorizado y logs en un solo servicio; sin infra separada. |
-| Validación | **zod** | Valida webhooks y configuración; falla temprano y claro. |
-| Logging | **pino** | Estructurado (JSON), bajo overhead. |
-| Tests | **vitest** + adaptadores fake | Rápido, TS-native. |
-| Lint/format | **ESLint + Prettier** | Consistencia automática. |
+| Capa              | Elección                                                     | Razón                                                                                              |
+| ----------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Lenguaje          | **Node.js + TypeScript `strict`**                            | Ya es el lenguaje de trabajo; unifica stack; tipado fuerte sostiene los contratos de puertos.      |
+| HTTP              | **Fastify** (o Express)                                      | Delgado; solo expone webhooks. Es un adaptador de entrada → framework intercambiable.              |
+| Canal (piloto)    | **WhatsApp Business Cloud API (Meta)**                       | Es donde **ya está** el productor rural; soporta recibir/enviar audio; tier gratuito para validar. |
+| Canal (dev/test)  | **Telegram Bot API**                                         | Fricción cero para probar el pipeline internamente antes de la aprobación de Meta.                 |
+| STT               | **Whisper API**                                              | Excelente en español; robusto a acentos y ruido de campo.                                          |
+| TTS               | **OpenAI TTS** o **ElevenLabs**                              | Voz natural en español. Detrás de puerto → intercambiable.                                         |
+| LLM               | **API de un LLM con buen español** (Claude / GPT) vía puerto | Sin fine-tuning: el valor está en el RAG, no en el modelo.                                         |
+| Embeddings        | `text-embedding-3-small` (o multilingüe)                     | Barato, suficiente para el corpus inicial.                                                         |
+| Vector store + DB | **Supabase (Postgres + pgvector)**                           | Corpus vectorizado y logs en un solo servicio; sin infra separada.                                 |
+| Validación        | **zod**                                                      | Valida webhooks y configuración; falla temprano y claro.                                           |
+| Logging           | **pino**                                                     | Estructurado (JSON), bajo overhead.                                                                |
+| Tests             | **vitest** + adaptadores fake                                | Rápido, TS-native.                                                                                 |
+| Lint/format       | **ESLint + Prettier**                                        | Consistencia automática.                                                                           |
 
 > Ninguna de estas librerías aparece en `domain/` ni en `application/`. Todas viven en `infrastructure/`, `interfaces/` o `config/`.
 
@@ -405,6 +410,7 @@ Fuentes curadas (.md / .pdf validados por zootecnista)
 ```
 
 Reglas:
+
 - Cada documento fuente lleva **procedencia y validador** en su metadata. Solo entra al corpus lo validado.
 - El script es **idempotente** (re-ejecutable sin duplicar) y versionable.
 - Reutiliza el mismo puerto `Embedder` que el runtime → un solo lugar decide cómo se embeben los textos (consistencia).
@@ -495,14 +501,14 @@ La arquitectura hace el testing barato **por diseño**:
 
 Cada evolución futura ya tiene su lugar, gracias a los puertos:
 
-| Quiero agregar… | Qué hago | Qué NO toco |
-|---|---|---|
-| **Otro canal** (WhatsApp además de Telegram, o Instagram) | Nuevo adaptador en `infrastructure/channels/` + webhook en `interfaces/http/` | `domain/`, `application/` |
-| **Registro de datos productivos** (fase 2) | Nuevo caso de uso `LogProductionData` + puerto `ProductionRepository`; el canal ya existe | El caso de uso `AnswerQuery` |
-| **Humano en el loop** (técnico que respalda) | Nuevo puerto `HumanReviewQueue`; `SafetyPolicy` puede encolar en vez de responder | Adaptadores de IA existentes |
-| **Cambiar de proveedor de LLM/TTS/STT** | Nuevo adaptador que implementa el mismo puerto + cambio en el container | Todo lo demás |
-| **Dashboard / analítica** | Nuevo servicio que lee de `ConversationLog`/`ProductionRepository` | El backend del bot |
-| **Matching de ventas** (otra oportunidad) | Nuevo bounded context / módulo aparte que reutiliza canal y patrón hexagonal | Este módulo |
+| Quiero agregar…                                           | Qué hago                                                                                  | Qué NO toco                  |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------- |
+| **Otro canal** (WhatsApp además de Telegram, o Instagram) | Nuevo adaptador en `infrastructure/channels/` + webhook en `interfaces/http/`             | `domain/`, `application/`    |
+| **Registro de datos productivos** (fase 2)                | Nuevo caso de uso `LogProductionData` + puerto `ProductionRepository`; el canal ya existe | El caso de uso `AnswerQuery` |
+| **Humano en el loop** (técnico que respalda)              | Nuevo puerto `HumanReviewQueue`; `SafetyPolicy` puede encolar en vez de responder         | Adaptadores de IA existentes |
+| **Cambiar de proveedor de LLM/TTS/STT**                   | Nuevo adaptador que implementa el mismo puerto + cambio en el container                   | Todo lo demás                |
+| **Dashboard / analítica**                                 | Nuevo servicio que lee de `ConversationLog`/`ProductionRepository`                        | El backend del bot           |
+| **Matching de ventas** (otra oportunidad)                 | Nuevo bounded context / módulo aparte que reutiliza canal y patrón hexagonal              | Este módulo                  |
 
 La regla que garantiza esto: **agregar = escribir un adaptador nuevo; nunca modificar el núcleo.** (O de SOLID.)
 
@@ -510,7 +516,7 @@ La regla que garantiza esto: **agregar = escribir un adaptador nuevo; nunca modi
 
 ## 18. Roadmap por fases
 
-- **Fase 0 — Esqueleto:** estructura de carpetas, puertos definidos, caso de uso con **adaptadores fake**, tests verdes. El flujo corre end-to-end en memoria. *(Lo que Claude Code genera primero.)*
+- **Fase 0 — Esqueleto:** estructura de carpetas, puertos definidos, caso de uso con **adaptadores fake**, tests verdes. El flujo corre end-to-end en memoria. _(Lo que Claude Code genera primero.)_
 - **Fase 1 — Pipeline real por Telegram:** adaptadores reales (Whisper, TTS, LLM, pgvector, Telegram). Corpus semilla pequeño validado. Prueba interna voz→voz.
 - **Fase 2 — Piloto WhatsApp:** adaptador WhatsApp Cloud API + guardrails afinados + métricas en `ConversationLog`. Pilotos con un grupo reducido de productores (valida H3 y H4).
 - **Fase 3 en adelante:** según tracción — datos productivos, humano en el loop, dashboard.
