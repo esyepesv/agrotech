@@ -28,6 +28,10 @@ export interface Container {
 export function buildContainer(env: Env): Container {
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
   const openrouter = new OpenAI({ apiKey: env.LLM_API_KEY, baseURL: env.LLM_BASE_URL });
+  // La resolución de genéricos por defecto de @supabase/supabase-js hace que
+  // el tipo "pelado" SupabaseClient no case exactamente con el que infiere
+  // createClient(); es un desajuste conocido del SDK, no un any real.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const supabase: SupabaseClient = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, {
     auth: { persistSession: false },
   });

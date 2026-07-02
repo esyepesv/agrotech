@@ -30,6 +30,9 @@ export class PgVectorRetriever implements KnowledgeRetriever {
   async retrieve(query: string, k: number): Promise<RetrievedChunk[]> {
     const embedding = await this.embedder.embed(query);
 
+    // Desajuste conocido de genéricos por defecto en @supabase/supabase-js
+    // (tipo SupabaseClient "pelado"): no es un any real de nuestro código.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { data, error } = await this.client.rpc(MATCH_FUNCTION, {
       query_embedding: embedding,
       match_count: k,

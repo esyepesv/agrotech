@@ -1,0 +1,56 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import { loadEnv, type Env } from '../../config/env.js';
+import { buildContainer } from '../../config/container.js';
+import { createLogger } from '../../shared/logger.js';
+import { ConfigurationError } from '../../shared/errors.js';
+import { AnswerQueryDispatcher } from './dispatcher.js';
+import { registerTelegramWebhook } from './telegram-webhook.js';
+import { registerWhatsAppWebhook } from './whatsapp-webhook.js';
+
+/**
+ * Servidor HTTP delgado (sección 10): solo expone webhooks y un health
+ * check. Toda la lógica vive en el container/caso de uso. Exportado como
+ * función para que los tests puedan construirlo sin arrancar el proceso.
+ */
+export function buildServer(env: Env): FastifyInstance {
+  const logger = createLogger(env.LOG_LEVEL);
+  const container = buildContainer(env);
+  const dispatcher = new AnswerQueryDispatcher(container, logger);
+
+  // Fastify construye su propio logger pino interno a partir de la config
+  // (no se le pasa nuestra instancia: evita el desajuste de tipos entre
+  // pino.Logger y FastifyBaseLogger). El `logger` de shared/logger.ts se usa
+  // para el logging de aplicación (dispatcher, errores de negocio).
+  const app = Fastify({ logger: { level: env.LOG_LEVEL } });
+
+  app.get('/health', (_request, reply) => reply.code(200).send({ status: 'ok' }));
+
+  if (env.ACTIVE_CHANNEL === 'telegram') {
+    registerTelegramWebhook(app, dispatcher);
+  } else {
+    // env.ts exige WHATSAPP_VERIFY_TOKEN cuando ACTIVE_CHANNEL=whatsapp; esta
+    // guarda es defensiva para que TypeScript no lo trate como opcional.
+    if (env.WHATSAPP_VERIFY_TOKEN === undefined) {
+      throw new ConfigurationError('WHATSAPP_VERIFY_TOKEN requerido para ACTIVE_CHANNEL=whatsapp');
+    }
+    registerWhatsAppWebhook(app, dispatcher, env.WHATSAPP_VERIFY_TOKEN);
+  }
+
+  return app;
+}
+
+async function main(): Promise<void> {
+  const env = loadEnv();
+  const app = buildServer(env);
+  await app.listen({ port: env.PORT, host: '0.0.0.0' });
+}
+
+const isMainModule = import.meta.url === `file://${process.argv[1] ?? ''}`;
+if (isMainModule) {
+  main().catch((error: unknown) => {
+    // El logger de aplicación depende de un env válido; si loadEnv falla,
+    // no hay logger disponible, así que se usa console como último recurso.
+    console.error(error);
+    process.exit(1);
+  });
+}
