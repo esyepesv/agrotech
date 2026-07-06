@@ -21,7 +21,10 @@ describe.skipIf(!hasSupabaseCreds)('SupabaseConversationLog (integración real)'
       process.env.SUPABASE_SERVICE_KEY ?? '',
       { auth: { persistSession: false } },
     );
-    const log = new SupabaseConversationLog(client);
+    const log = new SupabaseConversationLog(
+      client,
+      process.env.USER_ID_SALT ?? 'integration-test-salt-only-min16',
+    );
 
     await expect(
       log.record({
