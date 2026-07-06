@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { loadEnv, type Env } from '../../config/env.js';
 import { buildContainer } from '../../config/container.js';
@@ -40,6 +41,11 @@ export function buildServer(env: Env): FastifyInstance {
 }
 
 async function main(): Promise<void> {
+  // En desarrollo se carga el .env local; en producción las variables las
+  // provee la plataforma, así que la carga es opcional (no falla si no existe).
+  if (existsSync('.env')) {
+    process.loadEnvFile('.env');
+  }
   const env = loadEnv();
   const app = buildServer(env);
   await app.listen({ port: env.PORT, host: '0.0.0.0' });

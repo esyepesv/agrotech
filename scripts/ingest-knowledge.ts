@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import OpenAI from 'openai';
@@ -113,6 +114,9 @@ async function listKnowledgeFiles(): Promise<string[]> {
 }
 
 async function main(): Promise<void> {
+  if (existsSync('.env')) {
+    process.loadEnvFile('.env');
+  }
   const env = loadEnv();
   const logger = createLogger(env.LOG_LEVEL);
 
