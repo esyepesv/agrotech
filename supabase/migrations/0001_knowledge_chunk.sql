@@ -18,8 +18,14 @@ create table if not exists knowledge_chunk (
   updated_at   timestamptz default now()
 );
 
-create index if not exists knowledge_chunk_embedding_idx
-  on knowledge_chunk using ivfflat (embedding vector_cosine_ops);
+-- Búsqueda vectorial EXACTA para el corpus del MVP (pocos cientos de chunks):
+-- un seq scan sobre `<=>` siempre devuelve el top-k correcto. NO se usa un
+-- índice ivfflat: al ser aproximado y particionar en "listas", con un corpus
+-- pequeño la mayoría de consultas caen en listas vacías y no recuperan nada.
+-- Cuando el corpus crezca a miles de chunks, crear un índice HNSW (alto recall,
+-- sin entrenamiento):
+--   create index knowledge_chunk_embedding_idx
+--     on knowledge_chunk using hnsw (embedding vector_cosine_ops);
 
 create index if not exists knowledge_chunk_source_idx on knowledge_chunk (source);
 
