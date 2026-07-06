@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IncomingMessage } from '../../src/domain/message/incoming-message.js';
-import { err } from '../../src/domain/shared/result.js';
+import { err, ok } from '../../src/domain/shared/result.js';
 import {
   AnswerQuery,
   ANSWER_QUERY_MESSAGES,
@@ -9,10 +9,12 @@ import {
 import { FakeAnswerGenerator } from './fakes/fake-answer-generator.js';
 import { FakeChannelGateway } from './fakes/fake-channel-gateway.js';
 import { FakeConversationLog } from './fakes/fake-conversation-log.js';
-import { FakeKnowledgeRetriever } from './fakes/fake-knowledge-retriever.js';
+import { FakeKnowledgeRetriever, sampleChunk } from './fakes/fake-knowledge-retriever.js';
 import { FakeSafetyPolicy } from './fakes/fake-safety-policy.js';
 import { FakeSpeechSynthesizer } from './fakes/fake-speech-synthesizer.js';
 import { FakeTranscriber } from './fakes/fake-transcriber.js';
+
+const MIN_RELEVANCE_SCORE = 0.35;
 
 function textMessage(text: string): IncomingMessage {
   return {
@@ -53,6 +55,7 @@ function buildDeps(overrides: Partial<FakeDeps> = {}): FakeDeps {
     generator: new FakeAnswerGenerator(),
     safetyPolicy: new FakeSafetyPolicy(['antibiótico', 'dosis']),
     conversationLog: new FakeConversationLog(),
+    minRelevanceScore: MIN_RELEVANCE_SCORE,
     ...overrides,
   };
 }
@@ -177,5 +180,36 @@ describe('AnswerQuery', () => {
 
     expect(deps.conversationLog.turns).toHaveLength(1);
     expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
+  });
+
+  it('chunk recuperado por debajo del umbral de relevancia → responde "no sé" sin llamar al generador (#3)', async () => {
+    const deps = buildDeps({
+      retriever: new FakeKnowledgeRetriever([sampleChunk({ score: 0.1 })]),
+    });
+    const gateway = new FakeChannelGateway();
+
+    await new AnswerQuery(deps).handle(textMessage('¿cómo alimento una hembra lactante?'), gateway);
+
+    expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.noKnowledge);
+    expect(deps.generator.inputs).toHaveLength(0);
+    expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
+  });
+
+  it('reviewAnswer detecta contenido de medicación en el borrador → escala aunque la pregunta haya sido permitida (#4)', async () => {
+    const deps = buildDeps({
+      safetyPolicy: new FakeSafetyPolicy([], ['ivermectina']),
+      generator: new FakeAnswerGenerator(
+        ok({
+          text: 'Puedes aplicarle 5 ml de ivermectina cada 8 horas.',
+          usedSources: [{ id: 'chunk-1', source: 'alimentacion.md' }],
+        }),
+      ),
+    });
+    const gateway = new FakeChannelGateway();
+
+    await new AnswerQuery(deps).handle(textMessage('¿cómo trato el cojeo de mi cerda?'), gateway);
+
+    expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.escalation);
+    expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'escalate_vet' });
   });
 });

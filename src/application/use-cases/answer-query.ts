@@ -25,6 +25,12 @@ export interface AnswerQueryDeps {
   readonly generator: AnswerGenerator;
   readonly safetyPolicy: SafetyPolicy;
   readonly conversationLog: ConversationLog;
+  /**
+   * Umbral mínimo de similitud (#3 hardening) para aceptar un chunk
+   * recuperado como contexto válido: por debajo de este score, el chunk se
+   * descarta del grounding aunque haya quedado en el top-k por distancia.
+   */
+  readonly minRelevanceScore: number;
 }
 
 const RETRIEVAL_K = 5;
@@ -85,9 +91,29 @@ export class AnswerQuery {
     }
 
     const answer = await this.generateGroundedAnswer(question, locale);
-    const delivery = await this.deliver(gateway, message, answer.text, locale);
-    await this.record(message, question, answer.text, 'answer', startedAt);
+    const reviewed = this.applyOutputGuardrail(question, answer.text);
+    const delivery = await this.deliver(gateway, message, reviewed.text, locale);
+    await this.record(message, question, reviewed.text, reviewed.action, startedAt);
     this.throwIfDeliveryFailed(message, delivery);
+  }
+
+  /**
+   * Guardrail post-generación (#4, cablea SafetyPolicy.reviewAnswer): revisa
+   * el borrador ya redactado por el LLM (que pudo colarse con contenido de
+   * medicación/dosis pese a que la pregunta original haya sido permitida) y,
+   * si la decisión no es 'answer', sustituye el texto a entregar por el
+   * mensaje de escalamiento/rechazo correspondiente.
+   */
+  private applyOutputGuardrail(
+    question: string,
+    draft: string,
+  ): { text: string; action: SafetyAction } {
+    const review = this.deps.safetyPolicy.reviewAnswer(question, draft);
+    if (review.action === 'answer') {
+      return { text: draft, action: 'answer' };
+    }
+    const text = review.action === 'escalate_vet' ? ESCALATION_MESSAGE : REFUSAL_MESSAGE;
+    return { text, action: review.action };
   }
 
   private async resolveQuestion(
@@ -121,9 +147,14 @@ export class AnswerQuery {
     question: string,
     locale: Locale,
   ): Promise<{ text: string; sources: readonly KnowledgeReference[] }> {
-    const context = await this.deps.retriever.retrieve(question, RETRIEVAL_K);
+    const retrieved = await this.deps.retriever.retrieve(question, RETRIEVAL_K);
 
-    // Grounding obligatorio: sin contexto del corpus curado no se responde.
+    // Umbral de relevancia (#3 hardening): el retriever devuelve el top-k
+    // por distancia aunque la similitud sea baja; se descartan los chunks
+    // que no llegan al umbral ANTES de decidir si hay grounding suficiente.
+    const context = retrieved.filter((chunk) => chunk.score >= this.deps.minRelevanceScore);
+
+    // Grounding obligatorio: sin contexto relevante del corpus curado no se responde.
     if (context.length === 0) {
       return { text: NO_KNOWLEDGE_MESSAGE, sources: [] };
     }

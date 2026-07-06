@@ -4,8 +4,12 @@ import type { SafetyPolicy } from '../../../src/application/ports/safety-policy.
 
 export class FakeSafetyPolicy implements SafetyPolicy {
   readonly assessedQuestions: string[] = [];
+  readonly reviewedDrafts: { question: string; draft: string }[] = [];
 
-  constructor(private readonly escalateKeywords: string[] = []) {}
+  constructor(
+    private readonly escalateKeywords: string[] = [],
+    private readonly reviewEscalateKeywords: string[] = [],
+  ) {}
 
   assessQuestion(question: string): SafetyDecision {
     this.assessedQuestions.push(question);
@@ -14,7 +18,10 @@ export class FakeSafetyPolicy implements SafetyPolicy {
     return hit === undefined ? allowAnswer() : escalateToVet(`keyword: ${hit}`);
   }
 
-  reviewAnswer(_question: string, _draft: string): SafetyDecision {
-    return allowAnswer();
+  reviewAnswer(question: string, draft: string): SafetyDecision {
+    this.reviewedDrafts.push({ question, draft });
+    const lowered = draft.toLowerCase();
+    const hit = this.reviewEscalateKeywords.find((keyword) => lowered.includes(keyword));
+    return hit === undefined ? allowAnswer() : escalateToVet(`draft keyword: ${hit}`);
   }
 }
