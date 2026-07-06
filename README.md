@@ -91,6 +91,25 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://<tu
 4. Suscribirse al campo `messages` del webhook.
 5. Poner `ACTIVE_CHANNEL=whatsapp` en `.env` y reiniciar el servidor.
 
+## Despliegue en Vercel
+
+Además del servidor Fastify (para desarrollo local), el proyecto expone el mismo caso de uso como funciones serverless en `api/` (convención de Vercel: cada archivo es una ruta), pensadas para el plan Hobby:
+
+- `GET /api/health` → health check.
+- `POST /api/webhook/telegram` → webhook de Telegram.
+- `GET|POST /api/webhook/whatsapp` → verificación de Meta (`GET`) y mensajes entrantes (`POST`).
+
+Estas funciones reutilizan los parsers puros y el caso de uso existentes (`src/interfaces/serverless/runtime.ts` construye el container una sola vez por instancia caliente); no duplican lógica de negocio.
+
+Para desplegar:
+
+1. Conectar el repositorio en el dashboard de Vercel (Import Project).
+2. Configurar en **Settings → Environment Variables** las mismas claves que en `.env.example` (`TELEGRAM_BOT_TOKEN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `OPENAI_API_KEY`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `EMBEDDINGS_MODEL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `LOG_LEVEL`, `ACTIVE_CHANNEL`). `PORT` no aplica en serverless.
+3. Desplegar (Vercel detecta `api/**/*.ts` automáticamente; `vercel.json` solo fija `maxDuration: 300` para dar margen a las llamadas de STT/LLM/TTS).
+4. Registrar los webhooks apuntando al dominio del deploy:
+   - Telegram: `https://<tu-deploy>.vercel.app/api/webhook/telegram`
+   - WhatsApp: `https://<tu-deploy>.vercel.app/api/webhook/whatsapp` (usar esta misma URL como "Callback URL" en el panel de Meta, con el `WHATSAPP_VERIFY_TOKEN` configurado como "Verify Token").
+
 ## Scripts
 
 | Script              | Qué hace                                                                           |
