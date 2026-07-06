@@ -63,7 +63,8 @@ test/                             # vitest: domain/, application/ (fakes in-memo
 - **OpenRouter (LLM):** crear cuenta en [openrouter.ai](https://openrouter.ai), generar una API key → `LLM_API_KEY`. El modelo se elige en `LLM_MODEL` (default `anthropic/claude-sonnet-4.5`); cualquier modelo compatible con chat completions sirve.
 - **OpenAI (STT/TTS/embeddings):** crear una API key en [platform.openai.com](https://platform.openai.com) → `OPENAI_API_KEY`. Se usa solo para Whisper, TTS y embeddings — **no** para la generación de respuestas.
 - **Supabase:** crear un proyecto en [supabase.com](https://supabase.com), habilitar la extensión `vector` (la migración ya incluye `create extension if not exists vector`, pero el plan debe soportarla) y copiar `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` (Service Role key, no la `anon`).
-- **WhatsApp Cloud API de Meta (opcional, piloto):** crear una app en [developers.facebook.com](https://developers.facebook.com) con el producto **WhatsApp Business Cloud API**, obtener `WHATSAPP_TOKEN` y `WHATSAPP_PHONE_NUMBER_ID`, y definir tú mismo un `WHATSAPP_VERIFY_TOKEN` (string secreto arbitrario). Meta limita a 5 números de prueba hasta pasar la verificación de negocio.
+- **WhatsApp Cloud API de Meta (opcional, piloto):** crear una app en [developers.facebook.com](https://developers.facebook.com) con el producto **WhatsApp Business Cloud API**, obtener `WHATSAPP_TOKEN` y `WHATSAPP_PHONE_NUMBER_ID`, y definir tú mismo un `WHATSAPP_VERIFY_TOKEN` (string secreto arbitrario). Meta limita a 5 números de prueba hasta pasar la verificación de negocio. Copiar también el **App Secret** de "Configuración básica" de la app → `WHATSAPP_APP_SECRET` (ver sección "Seguridad" abajo).
+- **`USER_ID_SALT`** (requerido): pepper secreto (≥16 caracteres, p. ej. 64 hex aleatorios generados con `openssl rand -hex 32`) usado para el HMAC del hash de usuario en `conversation_turn`. Debe mantenerse constante entre despliegues (cambiarlo hace que el mismo usuario genere un `user_hash` distinto).
 
 ## Setup local
 
@@ -143,11 +144,19 @@ Rutas expuestas:
 Pasos:
 
 1. Conectar el repositorio en el dashboard de Vercel (Import Project). Con esto, cada push a `main` dispara un deploy automático.
-2. En **Settings → Environment Variables**, configurar las mismas claves que en `.env.example`: `TELEGRAM_BOT_TOKEN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `OPENAI_API_KEY`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `EMBEDDINGS_MODEL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `LOG_LEVEL`, `ACTIVE_CHANNEL`. `PORT` no aplica en serverless.
+2. En **Settings → Environment Variables**, configurar las mismas claves que en `.env.example`: `TELEGRAM_BOT_TOKEN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `OPENAI_API_KEY`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `EMBEDDINGS_MODEL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `USER_ID_SALT`, `RAG_MIN_SCORE`, `LOG_LEVEL`, `ACTIVE_CHANNEL`. `PORT` no aplica en serverless.
 3. Desplegar con `vercel --prod` (o dejar que el auto-deploy de `main` lo haga).
 4. Registrar los webhooks apuntando al dominio del deploy:
    - Telegram: `https://<tu-deploy>.vercel.app/api/webhook/telegram`
    - WhatsApp: `https://<tu-deploy>.vercel.app/api/webhook/whatsapp` (misma URL como "Callback URL" en el panel de Meta, con el `WHATSAPP_VERIFY_TOKEN` configurado como "Verify Token")
+
+## Seguridad
+
+- **Verificación de firma de webhooks (WhatsApp).** Si `WHATSAPP_APP_SECRET` está configurado, el `POST /webhook/whatsapp` (tanto en Fastify como en la función serverless de Vercel) verifica el header `X-Hub-Signature-256` que Meta calcula como HMAC-SHA256 del **raw body** con el App Secret, usando `src/infrastructure/security/meta-signature.ts` (comparación con `timingSafeEqual`). Si la firma falta o no coincide, responde `401` sin procesar el mensaje. El raw body se obtiene sin re-serializar `req.body`: en Fastify vía el plugin `fastify-raw-body` (acotado a esa ruta), y en Vercel leyendo el stream del request directamente (`src/infrastructure/http/raw-body.ts`), aprovechando que `@vercel/node` deja el stream original re-leíble tras poblar `req.body`. Si `WHATSAPP_APP_SECRET` no está definido, se omite la verificación y se loguea una advertencia (para no romper despliegues existentes mientras se configura). El App Secret nunca se loguea.
+- **Hash de usuario con pepper.** `channelUserId` se guarda en `conversation_turn` como `HMAC-SHA256(channelUserId, USER_ID_SALT)` (`src/infrastructure/persistence/supabase-conversation-log.ts`), no como SHA-256 pelado: sin el pepper (`USER_ID_SALT`, requerido, ≥16 caracteres) el hash no es reproducible por fuerza bruta/diccionario.
+- **Umbral de relevancia del RAG.** `AnswerQuery` descarta los chunks recuperados con `score < RAG_MIN_SCORE` (default `0.35`) antes de decidir si hay contexto suficiente para responder; si no queda ninguno, responde el mensaje de "no sé" en vez de generar con contexto poco relevante.
+- **Guardrail de salida (`reviewAnswer`).** Además del guardrail de entrada (`assessQuestion`, sobre la pregunta), `AnswerQuery` revisa el borrador ya redactado por el LLM con `SafetyPolicy.reviewAnswer` antes de entregarlo: si el borrador contiene contenido de medicación/dosis/síntomas (aunque la pregunta original haya sido permitida), se reemplaza por el mensaje de escalamiento/rechazo y se registra esa acción en `conversation_turn`.
+- **Idempotencia de webhooks en dos niveles.** `SeenMessages` (memoria, por proceso) sigue como fast-path L1; `SupabaseMessageDeduplicator` (tabla `processed_message`) es la autoridad L2 compartida entre instancias/invocaciones serverless — necesaria porque cada invocación de Vercel puede caer en una lambda distinta. Si la tabla aún no existe (migración `0002_processed_message.sql` sin aplicar), falla abierto (procesa el mensaje) para no dejar el bot caído.
 
 ## Scripts
 
@@ -168,7 +177,7 @@ Correr los tests:
 npm test
 ```
 
-Estado actual: **41 tests pasando, 5 saltados**. Los saltados son de integración de infraestructura (LLM, embeddings, STT/TTS, persistencia en Supabase) y usan `describe.skipIf`: se saltan automáticamente cuando no hay credenciales reales en el entorno, sin fallar el CI por su ausencia.
+Estado actual: **71 tests pasando, 5 saltados**. Los saltados son de integración de infraestructura (LLM, embeddings, STT/TTS, persistencia en Supabase) y usan `describe.skipIf`: se saltan automáticamente cuando no hay credenciales reales en el entorno, sin fallar el CI por su ausencia.
 
 ## Estado actual y pendientes
 
@@ -177,15 +186,17 @@ Estado actual: **41 tests pasando, 5 saltados**. Los saltados son de integració
 - Fases 0, 1 y 2 del roadmap original: esqueleto hexagonal con adaptadores fake, pipeline real end-to-end, y ambos canales (Telegram + WhatsApp) sirviendo en producción de forma simultánea.
 - RAG contra el corpus en Supabase/pgvector, con búsqueda vectorial exacta.
 - Guardrails de escalamiento a veterinario (`RuleBasedSafetyPolicy.assessQuestion`) con suite de tests dedicada.
-- Idempotencia de webhooks (dedup por `messageId`) y patrón responder-200-rápido + procesar en background, tanto en el servidor local como en las funciones serverless.
+- Idempotencia de webhooks en dos niveles (dedup por `messageId`: `SeenMessages` en memoria como L1, `SupabaseMessageDeduplicator`/`processed_message` como L2 compartida entre instancias serverless) y patrón responder-200-rápido + procesar en background, tanto en el servidor local como en las funciones serverless.
 - Propagación explícita de errores de envío al canal (`ChannelDeliveryError`) en vez de tragarlos en silencio.
 - Métricas básicas vía `ConversationLog` (`conversation_turn`: canal, hash del usuario, pregunta, respuesta, acción, latencia).
-- Privacidad: `channelUserId` se guarda hasheado (SHA-256) en `conversation_turn`, nunca en claro.
-- Tests verdes: 41 passing, 5 skipped.
+- Privacidad: `channelUserId` se guarda como HMAC-SHA256 + pepper (`USER_ID_SALT`) en `conversation_turn`, nunca en claro ni con un hash pelado.
+- Verificación de firma `X-Hub-Signature-256` en el webhook de WhatsApp (con `WHATSAPP_APP_SECRET`), umbral mínimo de relevancia en el RAG (`RAG_MIN_SCORE`) y guardrail de salida (`reviewAnswer`) cableado en `AnswerQuery` — ver sección "Seguridad".
+- Guardrails de escalamiento ampliados con expresiones coloquiales de síntomas ("no come", "no se levanta", "cojea", "hinchado", etc.) sin bloquear preguntas de manejo rutinario.
+- Tests verdes: 71 passing, 5 skipped.
 
 ### Pendientes conocidos
 
 1. **Corpus sin validar por un zootecnista** (el mayor pendiente de valor). Solo hay 3 documentos de ejemplo en `knowledge/`, todos marcados `validado_por: PENDIENTE zootecnista`. No usar con productores reales hasta que un profesional los revise y apruebe.
 2. **WhatsApp limitado a 5 números de prueba** hasta completar la verificación de negocio de Meta (`Business Verification`).
-3. **`SafetyPolicy.reviewAnswer`** (chequeo post-generación de la respuesta ya redactada) está implementado en `RuleBasedSafetyPolicy` pero **no está cableado** en `AnswerQuery` — hoy solo se invoca `assessQuestion` (pre-generación). Es opcional para el MVP; agregarlo no requiere tocar el puerto, solo invocarlo en el caso de uso.
+3. **Migración `supabase/migrations/0002_processed_message.sql` (tabla `processed_message`, dedup L2) pendiente de aplicar manualmente** (`supabase db push` o pegarla en el SQL Editor de Supabase). Mientras no se aplique, `SupabaseMessageDeduplicator` falla abierto (trata cada mensaje como primera vez) y el bot sigue funcionando igual que antes de este cambio.
 4. **Métricas avanzadas / PostHog** no construidas. Hoy las métricas viven únicamente en `conversation_turn` (Supabase); no hay dashboard ni un `AnalyticsSink` separado.
