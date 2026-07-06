@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Channel } from '../domain/message/incoming-message.js';
 import { AnswerQuery } from '../application/use-cases/answer-query.js';
 import type { ChannelGateway } from '../application/ports/channel-gateway.js';
+import type { MessageDeduplicator } from '../application/ports/message-deduplicator.js';
 import { WhisperTranscriber } from '../infrastructure/speech/whisper-transcriber.js';
 import { TtsSynthesizer } from '../infrastructure/speech/tts-synthesizer.js';
 import { LlmAnswerGenerator } from '../infrastructure/llm/llm-answer-generator.js';
@@ -10,8 +11,10 @@ import { LlmEmbedder } from '../infrastructure/llm/llm-embedder.js';
 import { PgVectorRetriever } from '../infrastructure/knowledge/pgvector-retriever.js';
 import { RuleBasedSafetyPolicy } from '../infrastructure/safety/rule-based-safety-policy.js';
 import { SupabaseConversationLog } from '../infrastructure/persistence/supabase-conversation-log.js';
+import { SupabaseMessageDeduplicator } from '../infrastructure/persistence/supabase-message-deduplicator.js';
 import { TelegramGateway } from '../infrastructure/channels/telegram-gateway.js';
 import { WhatsAppGateway } from '../infrastructure/channels/whatsapp-gateway.js';
+import type { Logger } from '../shared/logger.js';
 import type { Env } from './env.js';
 
 /**
@@ -23,9 +26,10 @@ export interface Container {
   readonly answerQuery: AnswerQuery;
   readonly resolveGateway: (channel: Channel) => ChannelGateway;
   readonly activeChannel: Channel;
+  readonly deduplicator: MessageDeduplicator;
 }
 
-export function buildContainer(env: Env): Container {
+export function buildContainer(env: Env, logger: Logger): Container {
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
   const openrouter = new OpenAI({ apiKey: env.LLM_API_KEY, baseURL: env.LLM_BASE_URL });
   // La resolución de genéricos por defecto de @supabase/supabase-js hace que
@@ -44,12 +48,14 @@ export function buildContainer(env: Env): Container {
     retriever: new PgVectorRetriever(supabase, embedder),
     generator: new LlmAnswerGenerator(openrouter, env.LLM_MODEL),
     safetyPolicy: new RuleBasedSafetyPolicy(),
-    conversationLog: new SupabaseConversationLog(supabase),
+    conversationLog: new SupabaseConversationLog(supabase, env.USER_ID_SALT),
+    minRelevanceScore: env.RAG_MIN_SCORE,
   });
 
   const resolveGateway = buildGatewayResolver(env);
+  const deduplicator = new SupabaseMessageDeduplicator(supabase, logger);
 
-  return { answerQuery, resolveGateway, activeChannel: env.ACTIVE_CHANNEL };
+  return { answerQuery, resolveGateway, activeChannel: env.ACTIVE_CHANNEL, deduplicator };
 }
 
 /**

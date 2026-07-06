@@ -15,7 +15,7 @@ import { registerWhatsAppWebhook } from './whatsapp-webhook.js';
  */
 export function buildServer(env: Env): FastifyInstance {
   const logger = createLogger(env.LOG_LEVEL);
-  const container = buildContainer(env);
+  const container = buildContainer(env, logger);
   const dispatcher = new AnswerQueryDispatcher(container, logger);
 
   // Fastify construye su propio logger pino interno a partir de la config
@@ -41,7 +41,11 @@ export function buildServer(env: Env): FastifyInstance {
     env.WHATSAPP_PHONE_NUMBER_ID !== undefined &&
     env.WHATSAPP_VERIFY_TOKEN !== undefined
   ) {
-    registerWhatsAppWebhook(app, dispatcher, env.WHATSAPP_VERIFY_TOKEN);
+    registerWhatsAppWebhook(app, dispatcher, {
+      verifyToken: env.WHATSAPP_VERIFY_TOKEN,
+      appSecret: env.WHATSAPP_APP_SECRET,
+      logger,
+    });
     registered.push('whatsapp');
   }
 

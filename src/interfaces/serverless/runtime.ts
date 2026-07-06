@@ -23,9 +23,20 @@ function getRuntime(): ServerlessRuntime {
     // entorno configuradas en el dashboard llegan ahí directamente (no hay
     // .env que cargar, a diferencia del servidor Fastify local).
     const env = loadEnv();
-    const container = buildContainer(env);
     const logger = createLogger(env.LOG_LEVEL);
+    const container = buildContainer(env, logger);
     const seen = new SeenMessages();
+
+    // #1 hardening: si el App Secret de Meta no está configurado, se omite
+    // la verificación de X-Hub-Signature-256 (ver api/webhook/whatsapp.ts)
+    // en vez de romper el webhook; se advierte una sola vez por instancia
+    // caliente en vez de en cada request.
+    if (env.WHATSAPP_TOKEN !== undefined && env.WHATSAPP_APP_SECRET === undefined) {
+      logger.warn(
+        'WHATSAPP_APP_SECRET no configurado: se omite la verificación de X-Hub-Signature-256 en el webhook de WhatsApp',
+      );
+    }
+
     runtime = { env, container, logger, seen };
   }
   return runtime;
@@ -34,33 +45,51 @@ function getRuntime(): ServerlessRuntime {
 /**
  * Expone el Env memoizado para los handlers que necesitan leer alguna
  * variable directamente (p. ej. WHATSAPP_VERIFY_TOKEN en el GET de
- * verificación del webhook de WhatsApp).
+ * verificación del webhook de WhatsApp, o WHATSAPP_APP_SECRET para
+ * verificar la firma del POST).
  */
 export function getEnv(): Env {
   return getRuntime().env;
 }
 
 /**
- * Réplica serverless de AnswerQueryDispatcher (src/interfaces/http/dispatcher.ts):
- * misma semántica de deduplicación por messageId y logging de errores sin
- * propagarlos al proveedor. A diferencia del dispatcher (fire-and-forget),
- * esta función devuelve la promesa para que el handler la entregue a
- * waitUntil y la función serverless no se congele/recicle antes de que
- * termine de procesar el mensaje en background.
+ * Expone el logger memoizado para los handlers de api/ que necesiten
+ * registrar eventos (p. ej. una firma inválida) sin loguear nunca secretos.
  */
-export function processIncoming(message: IncomingMessage): Promise<void> {
+export function getLogger(): Logger {
+  return getRuntime().logger;
+}
+
+/**
+ * Réplica serverless de AnswerQueryDispatcher (src/interfaces/http/dispatcher.ts):
+ * misma semántica de deduplicación por messageId (L1 en memoria + L2
+ * Supabase, dedup hardening) y logging de errores sin propagarlos al
+ * proveedor. A diferencia del dispatcher (fire-and-forget), esta función
+ * devuelve la promesa para que el handler la entregue a waitUntil y la
+ * función serverless no se congele/recicle antes de que termine de procesar
+ * el mensaje en background.
+ */
+export async function processIncoming(message: IncomingMessage): Promise<void> {
   const { container, logger, seen } = getRuntime();
 
   if (!seen.firstSight(message.messageId)) {
-    logger.debug({ messageId: message.messageId }, 'mensaje duplicado ignorado');
-    return Promise.resolve();
+    logger.debug({ messageId: message.messageId }, 'mensaje duplicado ignorado (L1 en memoria)');
+    return;
   }
 
-  const gateway = container.resolveGateway(message.channel);
-  return container.answerQuery.handle(message, gateway).catch((error: unknown) => {
+  try {
+    const firstSight = await container.deduplicator.firstSight(message.messageId);
+    if (!firstSight) {
+      logger.debug({ messageId: message.messageId }, 'mensaje duplicado ignorado (L2 Supabase)');
+      return;
+    }
+
+    const gateway = container.resolveGateway(message.channel);
+    await container.answerQuery.handle(message, gateway);
+  } catch (error: unknown) {
     logger.error(
       { err: error, messageId: message.messageId, channel: message.channel },
       'fallo al procesar mensaje entrante',
     );
-  });
+  }
 }

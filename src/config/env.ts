@@ -6,6 +6,11 @@ const envSchema = z
     WHATSAPP_TOKEN: z.string().min(1).optional(),
     WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
     WHATSAPP_VERIFY_TOKEN: z.string().min(1).optional(),
+    // App Secret de Meta (#1 hardening): si está definido, se exige y
+    // verifica la firma X-Hub-Signature-256 en el POST del webhook de
+    // WhatsApp. Opcional para no romper despliegues existentes antes de
+    // configurarlo (se loguea una advertencia mientras tanto).
+    WHATSAPP_APP_SECRET: z.string().min(1).optional(),
     TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
 
     LLM_API_KEY: z.string().min(1),
@@ -20,6 +25,15 @@ const envSchema = z
 
     SUPABASE_URL: z.string().url(),
     SUPABASE_SERVICE_KEY: z.string().min(1),
+
+    // Pepper secreto para el HMAC del hash de usuario (#2 hardening):
+    // reemplaza el SHA-256 pelado en SupabaseConversationLog. Requerido:
+    // sin pepper, el hash sería reproducible por fuerza bruta.
+    USER_ID_SALT: z.string().min(16),
+
+    // Umbral mínimo de similitud (#3 hardening) para aceptar un chunk
+    // recuperado como contexto válido en el grounding del RAG.
+    RAG_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.35),
 
     PORT: z.coerce.number().int().positive().default(3000),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
