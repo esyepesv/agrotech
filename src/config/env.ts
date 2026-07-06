@@ -57,7 +57,13 @@ export type Env = z.infer<typeof envSchema>;
  * si falta una variable, el proceso no levanta.
  */
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const parsed = envSchema.safeParse(source);
+  // Una variable presente pero vacía (p. ej. `WHATSAPP_TOKEN=` en un .env
+  // copiado de .env.example) se trata como ausente, para que .optional() y
+  // los .default() apliquen en vez de fallar por .min(1)/.url().
+  const cleaned = Object.fromEntries(
+    Object.entries(source).filter(([, value]) => value !== undefined && value !== ''),
+  );
+  const parsed = envSchema.safeParse(cleaned);
   if (!parsed.success) {
     const detail = parsed.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
