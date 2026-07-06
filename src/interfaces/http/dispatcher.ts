@@ -15,8 +15,13 @@ export interface WebhookDispatcher {
 /**
  * Despacha mensajes entrantes al caso de uso sin bloquear la respuesta HTTP
  * (fire-and-forget): el webhook responde 200 de inmediato y esto corre en
- * background. Deduplica por messageId (los proveedores reintentan) y nunca
- * propaga errores al proveedor — solo los loguea (sección 14).
+ * background. Deduplica por messageId (los proveedores reintentan) en dos
+ * niveles y nunca propaga errores al proveedor — solo los loguea (sección 14).
+ *
+ * - L1 (SeenMessages, en memoria): fast-path síncrono, barato, por proceso.
+ * - L2 (MessageDeduplicator, Supabase): autoridad compartida entre procesos;
+ *   se consulta en background, ANTES de invocar el caso de uso, para cubrir
+ *   el caso de reintentos que lleguen a otra instancia/réplica del servidor.
  */
 export class AnswerQueryDispatcher implements WebhookDispatcher {
   private readonly seenMessages = new SeenMessages();
@@ -28,16 +33,34 @@ export class AnswerQueryDispatcher implements WebhookDispatcher {
 
   dispatch(message: IncomingMessage): void {
     if (!this.seenMessages.firstSight(message.messageId)) {
-      this.logger.debug({ messageId: message.messageId }, 'mensaje duplicado ignorado');
+      this.logger.debug(
+        { messageId: message.messageId },
+        'mensaje duplicado ignorado (L1 en memoria)',
+      );
       return;
     }
 
-    const gateway = this.container.resolveGateway(message.channel);
-    void this.container.answerQuery.handle(message, gateway).catch((error: unknown) => {
+    void this.processInBackground(message);
+  }
+
+  private async processInBackground(message: IncomingMessage): Promise<void> {
+    try {
+      const firstSight = await this.container.deduplicator.firstSight(message.messageId);
+      if (!firstSight) {
+        this.logger.debug(
+          { messageId: message.messageId },
+          'mensaje duplicado ignorado (L2 Supabase)',
+        );
+        return;
+      }
+
+      const gateway = this.container.resolveGateway(message.channel);
+      await this.container.answerQuery.handle(message, gateway);
+    } catch (error: unknown) {
       this.logger.error(
         { err: error, messageId: message.messageId, channel: message.channel },
         'fallo al procesar mensaje entrante',
       );
-    });
+    }
   }
 }
