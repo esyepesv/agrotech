@@ -156,4 +156,26 @@ describe('AnswerQuery', () => {
     expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.noKnowledge);
     expect(deps.conversationLog.turns).toHaveLength(1);
   });
+
+  it('envío al canal falla → handle() rechaza, pero el turno queda registrado (no silencioso)', async () => {
+    const deps = buildDeps();
+    const gateway = new FakeChannelGateway(
+      false,
+      err({ kind: 'send_failed', message: 'token de WhatsApp expirado' }),
+    );
+
+    const promise = new AnswerQuery(deps).handle(
+      textMessage('¿cómo alimento una hembra lactante?'),
+      gateway,
+    );
+
+    await expect(promise).rejects.toMatchObject({
+      channel: 'telegram',
+      reason: 'token de WhatsApp expirado',
+    });
+    await expect(promise).rejects.toThrow('token de WhatsApp expirado');
+
+    expect(deps.conversationLog.turns).toHaveLength(1);
+    expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
+  });
 });

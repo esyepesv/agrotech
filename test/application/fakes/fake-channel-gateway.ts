@@ -10,7 +10,10 @@ import type {
 export class FakeChannelGateway implements ChannelGateway {
   readonly sent: OutgoingMessage[] = [];
 
-  constructor(private readonly audioFetchFails = false) {}
+  constructor(
+    private readonly audioFetchFails = false,
+    private readonly sendResult: Result<void, ChannelError> = ok(undefined),
+  ) {}
 
   async fetchAudio(_ref: AudioReference): Promise<Result<AudioClip, ChannelError>> {
     if (this.audioFetchFails) {
@@ -21,6 +24,6 @@ export class FakeChannelGateway implements ChannelGateway {
 
   async send(message: OutgoingMessage): Promise<Result<void, ChannelError>> {
     this.sent.push(message);
-    return ok(undefined);
+    return this.sendResult;
   }
 }

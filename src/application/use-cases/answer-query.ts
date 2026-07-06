@@ -8,8 +8,10 @@ import type { KnowledgeReference } from '../../domain/knowledge/retrieved-chunk.
 import { toReference } from '../../domain/knowledge/retrieved-chunk.js';
 import { createQuery } from '../../domain/query/query.js';
 import type { SafetyAction } from '../../domain/safety/safety-decision.js';
+import { ChannelDeliveryError } from '../../domain/shared/channel-delivery-error.js';
+import type { Result } from '../../domain/shared/result.js';
 import type { AnswerGenerator } from '../ports/answer-generator.js';
-import type { ChannelGateway } from '../ports/channel-gateway.js';
+import type { ChannelError, ChannelGateway } from '../ports/channel-gateway.js';
 import type { ConversationLog } from '../ports/conversation-log.js';
 import type { KnowledgeRetriever } from '../ports/knowledge-retriever.js';
 import type { SafetyPolicy } from '../ports/safety-policy.js';
@@ -59,7 +61,7 @@ export class AnswerQuery {
     const resolved = await this.resolveQuestion(message, gateway);
 
     if (resolved === undefined) {
-      await this.sendText(gateway, message, STT_FAILED_MESSAGE);
+      const delivery = await this.sendText(gateway, message, STT_FAILED_MESSAGE);
       await this.record(
         message,
         UNTRANSCRIBED_PLACEHOLDER,
@@ -67,6 +69,7 @@ export class AnswerQuery {
         'refuse',
         startedAt,
       );
+      this.throwIfDeliveryFailed(message, delivery);
       return;
     }
 
@@ -75,14 +78,16 @@ export class AnswerQuery {
 
     if (decision.action !== 'answer') {
       const text = decision.action === 'escalate_vet' ? ESCALATION_MESSAGE : REFUSAL_MESSAGE;
-      await this.deliver(gateway, message, text, locale);
+      const delivery = await this.deliver(gateway, message, text, locale);
       await this.record(message, question, text, decision.action, startedAt);
+      this.throwIfDeliveryFailed(message, delivery);
       return;
     }
 
     const answer = await this.generateGroundedAnswer(question, locale);
-    await this.deliver(gateway, message, answer.text, locale);
+    const delivery = await this.deliver(gateway, message, answer.text, locale);
     await this.record(message, question, answer.text, 'answer', startedAt);
+    this.throwIfDeliveryFailed(message, delivery);
   }
 
   private async resolveQuestion(
@@ -136,24 +141,39 @@ export class AnswerQuery {
     incoming: IncomingMessage,
     text: string,
     locale: Locale,
-  ): Promise<void> {
+  ): Promise<Result<void, ChannelError>> {
     if (incoming.type === 'voice') {
       const audio = await this.deps.synthesizer.synthesize(text, { locale });
       if (audio.ok) {
-        await gateway.send(this.outgoing(incoming, 'voice', text, audio.value));
-        return;
+        return gateway.send(this.outgoing(incoming, 'voice', text, audio.value));
       }
       // Degradación elegante: si TTS falla, la respuesta sale en texto.
     }
-    await this.sendText(gateway, incoming, text);
+    return this.sendText(gateway, incoming, text);
   }
 
   private async sendText(
     gateway: ChannelGateway,
     incoming: IncomingMessage,
     text: string,
-  ): Promise<void> {
-    await gateway.send(this.outgoing(incoming, 'text', text));
+  ): Promise<Result<void, ChannelError>> {
+    return gateway.send(this.outgoing(incoming, 'text', text));
+  }
+
+  /**
+   * El envío real (texto o voz) es el único punto que puede fallar de forma
+   * NO silenciosa: si gateway.send(...) devuelve err (p. ej. token de
+   * WhatsApp expirado), el turno ya quedó registrado como métrica, pero
+   * handle() debe rechazar para que el `.catch` del dispatcher/runtime
+   * (sección 14) lo loguee con messageId y channel en vez de tragárselo.
+   */
+  private throwIfDeliveryFailed(
+    incoming: IncomingMessage,
+    delivery: Result<void, ChannelError>,
+  ): void {
+    if (!delivery.ok) {
+      throw new ChannelDeliveryError(incoming.channel, delivery.error.message);
+    }
   }
 
   private outgoing(
