@@ -26,15 +26,29 @@ export function buildServer(env: Env): FastifyInstance {
 
   app.get('/health', (_request, reply) => reply.code(200).send({ status: 'ok' }));
 
-  if (env.ACTIVE_CHANNEL === 'telegram') {
+  // Se registra cada canal cuyas credenciales estén presentes, así el bot
+  // puede atender Telegram y WhatsApp a la vez. ACTIVE_CHANNEL ya no limita
+  // qué webhooks se exponen; solo indica el canal principal.
+  const registered: string[] = [];
+
+  if (env.TELEGRAM_BOT_TOKEN !== undefined) {
     registerTelegramWebhook(app, dispatcher);
-  } else {
-    // env.ts exige WHATSAPP_VERIFY_TOKEN cuando ACTIVE_CHANNEL=whatsapp; esta
-    // guarda es defensiva para que TypeScript no lo trate como opcional.
-    if (env.WHATSAPP_VERIFY_TOKEN === undefined) {
-      throw new ConfigurationError('WHATSAPP_VERIFY_TOKEN requerido para ACTIVE_CHANNEL=whatsapp');
-    }
+    registered.push('telegram');
+  }
+
+  if (
+    env.WHATSAPP_TOKEN !== undefined &&
+    env.WHATSAPP_PHONE_NUMBER_ID !== undefined &&
+    env.WHATSAPP_VERIFY_TOKEN !== undefined
+  ) {
     registerWhatsAppWebhook(app, dispatcher, env.WHATSAPP_VERIFY_TOKEN);
+    registered.push('whatsapp');
+  }
+
+  if (registered.length === 0) {
+    throw new ConfigurationError(
+      'Ningún canal configurado: define credenciales de Telegram y/o WhatsApp',
+    );
   }
 
   return app;
