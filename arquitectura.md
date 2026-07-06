@@ -251,6 +251,8 @@ test/
 
 **Por qué esta separación importa para el mantenimiento:** cuando alguien quiera agregar WhatsApp, sabe exactamente dónde va (`infrastructure/channels/` + `interfaces/http/`) y sabe que **no debe tocar** `domain/` ni `application/`. La estructura enseña la regla.
 
+> **Actualizado en implementación:** la estructura real agregó, sin romper la regla de dependencia de arriba, un **segundo adaptador de entrada**: `src/interfaces/serverless/runtime.ts` (container memoizado reutilizado por funciones serverless) y, fuera de `src/`, el directorio `api/` (`api/health.ts`, `api/webhook/telegram.ts`, `api/webhook/whatsapp.ts`) para el despliegue en Vercel — coexiste con el servidor Fastify de `interfaces/http/` sin duplicar lógica de negocio (ambos llaman al mismo `AnswerQuery`/`Container`). También se añadieron `interfaces/http/dispatcher.ts` y `interfaces/http/dedup.ts` (idempotencia por `messageId`) y `domain/shared/channel-delivery-error.ts` / `domain/shared/conversation-turn.ts`. Ver la estructura de carpetas completa y actualizada en `README.md`.
+
 ---
 
 ## 7. Composition root (inyección de dependencias)
@@ -377,6 +379,8 @@ Objetos inmutables, sin comportamiento de infraestructura:
 
 > Ninguna de estas librerías aparece en `domain/` ni en `application/`. Todas viven en `infrastructure/`, `interfaces/` o `config/`.
 
+> **Actualizado en implementación:** el LLM de generación se resolvió vía **OpenRouter** (`LlmAnswerGenerator`, `src/infrastructure/llm/llm-answer-generator.ts`), usando el SDK de OpenAI apuntado a `LLM_BASE_URL=https://openrouter.ai/api/v1` — así el puerto `AnswerGenerator` queda satisfecho sin acoplarse a un proveedor concreto, y cambiar de modelo es solo cambiar `LLM_MODEL` (por defecto `anthropic/claude-sonnet-4.5`). STT (Whisper), TTS y embeddings van **directo a OpenAI** (`OPENAI_API_KEY`), no a través de OpenRouter, porque OpenRouter no expone esos endpoints. El despliegue objetivo terminó incluyendo **funciones serverless de Vercel** (`api/`) para producción, además del servidor Fastify local para desarrollo (ver sección 19 y `README.md`).
+
 ---
 
 ## 11. Seguridad y alcance (guardrails) — no es opcional
@@ -431,11 +435,13 @@ create table knowledge_chunk (
 create index on knowledge_chunk using ivfflat (embedding vector_cosine_ops);
 ```
 
+> **Actualizado en implementación:** la migración real (`supabase/migrations/0001_knowledge_chunk.sql`) **no crea el índice `ivfflat`** de arriba. En su lugar, la búsqueda es un **seq scan exacto** sobre el operador `<=>` (sin índice de aproximación): con el corpus pequeño del MVP, `ivfflat` es aproximado y particiona en "listas" — la mayoría de consultas caían en listas vacías y no recuperaban nada, lo cual es peor que un scan completo (que para unos pocos cientos de chunks es rápido y siempre exacto). La migración deja comentada la opción de crear un índice **HNSW** (`using hnsw (embedding vector_cosine_ops)`, alto recall y sin fase de entrenamiento) para cuando el corpus crezca a miles de chunks y el seq scan deje de ser suficiente.
+
 ---
 
 ## 13. Configuración y entorno
 
-`config/env.ts` valida con zod al arranque. Si falta algo, **el proceso no levanta** (fail-fast). Variables:
+`config/env.ts` valida con zod al arranque. Si falta algo, **el proceso no levanta** (fail-fast). Variables (versión original de diseño; ver nota de actualización debajo):
 
 ```
 # Canal
@@ -464,6 +470,39 @@ ACTIVE_CHANNEL=whatsapp|telegram
 
 Nunca se commitean secretos. Hay un `.env.example` con las llaves sin valores.
 
+> **Actualizado en implementación:** el esquema real (`src/config/env.ts`, ver también `.env.example`) reemplazó `LLM_PROVIDER`/`STT_API_KEY`/`TTS_PROVIDER`/`TTS_API_KEY`/`EMBEDDINGS_API_KEY` por:
+>
+> ```
+> # Canal (cada uno opcional; se registra el canal cuyas credenciales estén presentes)
+> WHATSAPP_TOKEN=
+> WHATSAPP_PHONE_NUMBER_ID=
+> WHATSAPP_VERIFY_TOKEN=
+> TELEGRAM_BOT_TOKEN=
+>
+> # LLM vía OpenRouter (generación de respuestas)
+> LLM_API_KEY=
+> LLM_BASE_URL=https://openrouter.ai/api/v1   # default
+> LLM_MODEL=anthropic/claude-sonnet-4.5        # default
+>
+> # OpenAI directo: STT (Whisper), TTS y embeddings
+> OPENAI_API_KEY=
+> STT_MODEL=whisper-1            # default
+> TTS_MODEL=tts-1                # default
+> TTS_VOICE=alloy                # default
+> EMBEDDINGS_MODEL=text-embedding-3-small   # default
+>
+> # Datos
+> SUPABASE_URL=
+> SUPABASE_SERVICE_KEY=
+>
+> # App
+> PORT=3000                      # default; no aplica en serverless (Vercel)
+> LOG_LEVEL=info                 # default
+> ACTIVE_CHANNEL=telegram        # default: telegram | whatsapp
+> ```
+>
+> `ACTIVE_CHANNEL` ya **no selecciona un único canal excluyente**: el servidor (`src/interfaces/http/server.ts`) y el runtime serverless (`src/interfaces/serverless/runtime.ts`) registran **cada canal cuyas credenciales estén presentes**, así que Telegram y WhatsApp pueden estar activos a la vez. `ACTIVE_CHANNEL` quedó como el canal "principal" informativo y determina qué credenciales son obligatorias para que `loadEnv` valide (p. ej. con `ACTIVE_CHANNEL=telegram`, `TELEGRAM_BOT_TOKEN` es requerido, pero se pueden agregar además las credenciales de WhatsApp para servir ambos). `loadEnv` también trata cualquier variable **presente pero vacía** como ausente, para que una copia de `.env.example` sin completar valide contra los `.optional()`/`.default()` en vez de fallar.
+
 ---
 
 ## 14. Manejo de errores y resiliencia
@@ -473,6 +512,8 @@ Nunca se commitean secretos. Hay un `.env.example` con las llaves sin valores.
 - **Timeouts y reintentos** con backoff en llamadas a APIs externas (STT/LLM/TTS), encapsulados en el adaptador, invisibles para el caso de uso.
 - **Idempotencia de webhooks:** los proveedores reintentan; se deduplica por `messageId`.
 - **Nunca romper el webhook:** el controller responde `200` rápido y procesa; los errores se loguean, no se propagan al proveedor.
+
+> **Actualizado en implementación:** el fallo de entrega al canal (`ChannelGateway.send`, p. ej. un token de WhatsApp expirado) dejó de tragarse en silencio. `AnswerQuery.handle` registra igual el turno en `ConversationLog` y luego lanza `ChannelDeliveryError` (`src/domain/shared/channel-delivery-error.ts`), que el `.catch` del dispatcher (`src/interfaces/http/dispatcher.ts`) y del runtime serverless (`src/interfaces/serverless/runtime.ts`) capturan y loguean con `messageId` y `channel` — visible en logs aunque el webhook siga respondiendo `200` al proveedor, tal como manda la regla de "nunca romper el webhook".
 
 ---
 
