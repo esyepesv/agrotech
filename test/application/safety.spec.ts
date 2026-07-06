@@ -28,6 +28,31 @@ describe('RuleBasedSafetyPolicy', () => {
     });
   });
 
+  describe('expresiones coloquiales de síntomas → escalate_vet (#5)', () => {
+    const colloquialTrapQuestions = [
+      'la cerda no se levanta desde ayer',
+      'el lechón no se para bien',
+      'la marrana no come desde hace dos días',
+      'el cerdo no quiere comer nada',
+      'el lechón dejó de comer de un día para otro',
+      'veo la cerda muy decaída, ¿qué hago?',
+      'el cerdo está cojeando de una pata',
+      'la cerda no camina casi nada',
+      'el lechón arrastra la pata trasera',
+      'la cerda se ve triste y no se mueve',
+      'la cerda no puede parir, ya lleva horas así',
+      'la marrana lleva rato pujando y no sale nada',
+      'la herida del cerdo sigue sangrando',
+      'la pata del lechón está muy hinchada',
+    ];
+
+    it.each(colloquialTrapQuestions)('escala a veterinario: "%s"', (question) => {
+      const decision = policy.assessQuestion(question);
+      expect(decision.action).toBe('escalate_vet');
+      expect(decision.allowed).toBe(false);
+    });
+  });
+
   describe('preguntas de manejo permitidas → answer', () => {
     const allowedQuestions = [
       '¿cómo alimento una hembra lactante?',
@@ -35,6 +60,10 @@ describe('RuleBasedSafetyPolicy', () => {
       '¿cuántos días dura la gestación?',
       '¿cuántos días abiertos es normal tener tras el destete?',
       '¿cada cuánto debo revisar el pie de cría?',
+      '¿cuánto le doy de comer a una cerda en gestación?',
+      '¿cómo detecto que una cerda está en celo?',
+      '¿qué es la condición corporal y cómo se evalúa?',
+      '¿cuánto dura el destete recomendado?',
     ];
 
     it.each(allowedQuestions)('permite responder: "%s"', (question) => {

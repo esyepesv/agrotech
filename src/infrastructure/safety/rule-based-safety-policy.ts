@@ -55,6 +55,56 @@ const ESCALATION_PATTERNS: readonly EscalationPattern[] = [
     regex: /\b(muert|muri|morir|mortalidad|abort)\w*/,
     reason: 'consulta sobre mortalidad o aborto',
   },
+  // Expresiones coloquiales de síntomas/enfermedad (#5 hardening): el
+  // productor rara vez dice "diagnóstico" o "síntoma"; describe lo que ve.
+  // Se prioriza escalar ante ambigüedad de salud sin bloquear preguntas de
+  // manejo rutinario (alimentación, celo, condición corporal, gestación,
+  // destete): p. ej. "no come"/"no quiere comer"/"dejó de comer" escala,
+  // pero "¿cuánto le doy de comer?" (sin "no come") sigue respondiéndose.
+  {
+    regex: /no\s+se\s+(levanta\w*|para\b|puede\s+(parar|levantar)\w*)/,
+    reason: 'consulta sobre un animal que no se levanta o no se para (signo de enfermedad)',
+  },
+  {
+    regex: /(no\s+come\b|no\s+quiere\s+comer|dejo\s+de\s+comer)/,
+    reason: 'consulta sobre un animal que dejó de comer (signo de enfermedad)',
+  },
+  {
+    regex: /decaid\w*/,
+    reason: 'consulta sobre un animal decaído (signo de enfermedad)',
+  },
+  {
+    regex: /\b(cojea\w*|cojera|cojo|coja)\b/,
+    reason: 'consulta sobre cojera (signo de enfermedad o lesión)',
+  },
+  {
+    regex: /no\s+camina/,
+    reason: 'consulta sobre un animal que no camina',
+  },
+  {
+    regex: /arrastr\w*/,
+    reason: 'consulta sobre un animal que arrastra alguna extremidad',
+  },
+  {
+    regex: /se\s+ve\s+trist\w*/,
+    reason: 'consulta sobre un animal que se ve triste o decaído',
+  },
+  {
+    regex: /no\s+puede\s+parir/,
+    reason: 'consulta sobre dificultad de parto (distocia)',
+  },
+  {
+    regex: /pujando|atascad\w*/,
+    reason: 'consulta sobre pujos o atascamiento durante el parto (distocia)',
+  },
+  {
+    regex: /\bsangr\w*/,
+    reason: 'consulta sobre sangrado',
+  },
+  {
+    regex: /hincha\w*/,
+    reason: 'consulta sobre hinchazón o inflamación',
+  },
 ];
 
 function normalize(text: string): string {
