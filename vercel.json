@@ -1,4 +1,6 @@
 {
+  "buildCommand": "echo 'sin build: las funciones api/ las construye Vercel'",
+  "outputDirectory": "public",
   "functions": {
     "api/**/*.ts": {
       "maxDuration": 300
