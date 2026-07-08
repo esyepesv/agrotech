@@ -188,6 +188,14 @@ export class AnswerQuery {
 
     const generated = await this.deps.generator.generate({ question, context, locale });
     if (!generated.ok || generated.value.text.trim().length === 0) {
+      // Un fallo del proveedor (clave inválida, sin crédito, modelo caído) se
+      // enmascara como "sin información": lo dejamos en logs para no volver a
+      // diagnosticarlo a ciegas la próxima vez.
+      if (!generated.ok) {
+        console.error(
+          `[llm] generación falló (${generated.error.kind}): ${generated.error.message}`,
+        );
+      }
       return { text: NO_KNOWLEDGE_MESSAGE, sources: context.map(toReference) };
     }
 
