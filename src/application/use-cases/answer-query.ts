@@ -7,6 +7,7 @@ import type { OutgoingMessage } from '../../domain/message/outgoing-message.js';
 import type { KnowledgeReference } from '../../domain/knowledge/retrieved-chunk.js';
 import { toReference } from '../../domain/knowledge/retrieved-chunk.js';
 import { createQuery } from '../../domain/query/query.js';
+import { classifySmallTalk } from '../../domain/query/small-talk.js';
 import type { SafetyAction } from '../../domain/safety/safety-decision.js';
 import { ChannelDeliveryError } from '../../domain/shared/channel-delivery-error.js';
 import type { Result } from '../../domain/shared/result.js';
@@ -49,6 +50,14 @@ const NO_KNOWLEDGE_MESSAGE =
   'No tengo información confiable para responderte eso con seguridad. ' +
   'Te sugiero consultar a un técnico o zootecnista de confianza.';
 
+const WELCOME_MESSAGE =
+  '¡Hola! 👋 Soy tu asesor porcícola. Te ayudo con manejo reproductivo, ' +
+  'alimentación, condición corporal y prácticas de crianza de cerdos. ' +
+  '¿En qué puedo ayudarte hoy?';
+
+const THANKS_MESSAGE =
+  '¡Con gusto! Si tienes otra duda sobre el manejo de tus cerdos, aquí estoy. 🐷';
+
 const STT_FAILED_MESSAGE =
   'No pude entender la nota de voz. ¿Puedes reenviarla o escribir tu pregunta en texto?';
 
@@ -82,6 +91,19 @@ export class AnswerQuery {
     }
 
     const { question, locale } = resolved;
+
+    // Saludos/agradecimientos no tienen contexto en el corpus: se responden
+    // con un mensaje social en vez de mandarlos al RAG (que caería en el
+    // fallback de "no tengo información confiable").
+    const smallTalk = classifySmallTalk(question);
+    if (smallTalk !== undefined) {
+      const text = smallTalk === 'thanks' ? THANKS_MESSAGE : WELCOME_MESSAGE;
+      const delivery = await this.deliver(gateway, message, text, locale);
+      await this.record(message, question, text, 'answer', startedAt);
+      this.throwIfDeliveryFailed(message, delivery);
+      return;
+    }
+
     const decision = this.deps.safetyPolicy.assessQuestion(question);
 
     if (decision.action !== 'answer') {
@@ -250,6 +272,8 @@ export const ANSWER_QUERY_MESSAGES = {
   escalation: ESCALATION_MESSAGE,
   refusal: REFUSAL_MESSAGE,
   noKnowledge: NO_KNOWLEDGE_MESSAGE,
+  welcome: WELCOME_MESSAGE,
+  thanks: THANKS_MESSAGE,
   sttFailed: STT_FAILED_MESSAGE,
   defaultLocale: DEFAULT_LOCALE,
 } as const;

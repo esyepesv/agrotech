@@ -79,6 +79,18 @@ describe('AnswerQuery', () => {
     expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
   });
 
+  it('saludo "hola" → bienvenida sin tocar RAG ni generador', async () => {
+    const deps = buildDeps();
+    const gateway = new FakeChannelGateway();
+
+    await new AnswerQuery(deps).handle(textMessage('Hola'), gateway);
+
+    expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.welcome);
+    expect(deps.retriever.queries).toHaveLength(0);
+    expect(deps.generator.inputs).toHaveLength(0);
+    expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
+  });
+
   it('emite el indicador "escribiendo…" antes de responder', async () => {
     const deps = buildDeps();
     const gateway = new FakeChannelGateway();
