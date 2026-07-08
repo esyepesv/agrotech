@@ -1,5 +1,5 @@
 {
-  "name": "agrotech-asistente-porcicola",
+  "name": "porcia-backend",
   "version": "0.1.0",
   "description": "Asistente porcícola de conocimiento por voz (WhatsApp/Telegram + RAG)",
   "type": "module",

@@ -1,6 +1,6 @@
-# Asistente Porcícola de Voz
+# Porcia — Backend (Asistente Porcícola de Voz)
 
-Asistente de conocimiento por voz para porcicultores pequeños/medianos en Colombia. Recibe preguntas de manejo por Telegram o WhatsApp (texto o nota de voz), las responde con base en un corpus curado (RAG) y **escala a un veterinario** cuando el tema es sanitario o de medicación. El enfoque es deliberadamente angosto (el "wedge"): un asistente de conocimiento por voz que no exige que el productor registre ningún dato, y responde en el mismo formato en que le preguntaron (audio → audio, texto → texto). Ver `arquitectura.md` para la especificación completa de diseño (arquitectura hexagonal, puertos y adaptadores) y las notas de qué cambió respecto al plan original durante la implementación.
+Backend de **Porcia**. Asistente de conocimiento por voz para porcicultores pequeños/medianos en Colombia. Recibe preguntas de manejo por Telegram o WhatsApp (texto o nota de voz), las responde con base en un corpus curado (RAG) y **escala a un veterinario** cuando el tema es sanitario o de medicación. El enfoque es deliberadamente angosto (el "wedge"): un asistente de conocimiento por voz que no exige que el productor registre ningún dato, y responde en el mismo formato en que le preguntaron (audio → audio, texto → texto). Ver `arquitectura.md` para la especificación completa de diseño (arquitectura hexagonal, puertos y adaptadores) y las notas de qué cambió respecto al plan original durante la implementación.
 
 **Producción:** desplegado en Vercel en `https://agrotech-beryl.vercel.app` (auto-deploy en cada push a `main`, repo conectado a Vercel). Health check: `GET /api/health`.
 
