@@ -1,4 +1,8 @@
-import type { AudioClip, AudioReference } from '../../domain/message/incoming-message.js';
+import type {
+  AudioClip,
+  AudioReference,
+  IncomingMessage,
+} from '../../domain/message/incoming-message.js';
 import type { OutgoingMessage } from '../../domain/message/outgoing-message.js';
 import { err, ok, type Result } from '../../domain/shared/result.js';
 import type { ChannelError, ChannelGateway } from '../../application/ports/channel-gateway.js';
@@ -76,6 +80,23 @@ export class WhatsAppGateway implements ChannelGateway {
       });
     } catch (error) {
       return err({ kind: 'send_failed', message: describe(error) });
+    }
+  }
+
+  async indicateTyping(message: IncomingMessage): Promise<void> {
+    try {
+      await resilientFetch(`${GRAPH_BASE}/${this.config.phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: { ...this.authHeader, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: message.messageId,
+          typing_indicator: { type: 'text' },
+        }),
+      });
+    } catch {
+      // best-effort: la señal de escritura no debe romper el turno
     }
   }
 

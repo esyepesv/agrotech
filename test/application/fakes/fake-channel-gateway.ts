@@ -1,4 +1,8 @@
-import type { AudioClip, AudioReference } from '../../../src/domain/message/incoming-message.js';
+import type {
+  AudioClip,
+  AudioReference,
+  IncomingMessage,
+} from '../../../src/domain/message/incoming-message.js';
 import type { OutgoingMessage } from '../../../src/domain/message/outgoing-message.js';
 import type { Result } from '../../../src/domain/shared/result.js';
 import { err, ok } from '../../../src/domain/shared/result.js';
@@ -9,6 +13,7 @@ import type {
 
 export class FakeChannelGateway implements ChannelGateway {
   readonly sent: OutgoingMessage[] = [];
+  typingCalls = 0;
 
   constructor(
     private readonly audioFetchFails = false,
@@ -25,5 +30,9 @@ export class FakeChannelGateway implements ChannelGateway {
   async send(message: OutgoingMessage): Promise<Result<void, ChannelError>> {
     this.sent.push(message);
     return this.sendResult;
+  }
+
+  async indicateTyping(_message: IncomingMessage): Promise<void> {
+    this.typingCalls += 1;
   }
 }

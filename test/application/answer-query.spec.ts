@@ -79,6 +79,17 @@ describe('AnswerQuery', () => {
     expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
   });
 
+  it('emite el indicador "escribiendo…" antes de responder', async () => {
+    const deps = buildDeps();
+    const gateway = new FakeChannelGateway();
+
+    await new AnswerQuery(deps).handle(textMessage('¿cada cuánto se le da concentrado?'), gateway);
+
+    // Al menos una señal al inicio; se refresca de nuevo antes de generar.
+    expect(gateway.typingCalls).toBeGreaterThanOrEqual(1);
+    expect(gateway.sent).toHaveLength(1);
+  });
+
   it('voz → voz: transcribe, genera y responde con audio', async () => {
     const deps = buildDeps();
     const gateway = new FakeChannelGateway();

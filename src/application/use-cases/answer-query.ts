@@ -64,6 +64,8 @@ export class AnswerQuery {
 
   async handle(message: IncomingMessage, gateway: ChannelGateway): Promise<void> {
     const startedAt = Date.now();
+    // Feedback inmediato "escribiendo…" (best-effort, en paralelo: no añade latencia).
+    void gateway.indicateTyping(message);
     const resolved = await this.resolveQuestion(message, gateway);
 
     if (resolved === undefined) {
@@ -90,6 +92,9 @@ export class AnswerQuery {
       return;
     }
 
+    // Refresca el "escribiendo…" antes de la generación (en Telegram dura ~5 s;
+    // en WhatsApp la ventana de 25 s hace de esto un refresco inofensivo).
+    void gateway.indicateTyping(message);
     const answer = await this.generateGroundedAnswer(question, locale);
     const reviewed = this.applyOutputGuardrail(question, answer.text);
     const delivery = await this.deliver(gateway, message, reviewed.text, locale);
