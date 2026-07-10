@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FarmId } from '../../domain/farm/farm.js';
-import type { InventoryItem, InventoryKind, InventoryUnit } from '../../domain/farm/inventory-item.js';
+import type {
+  InventoryItem,
+  InventoryKind,
+  InventoryUnit,
+} from '../../domain/farm/inventory-item.js';
 import type { InventoryMovement, MovementDirection } from '../../domain/farm/inventory-movement.js';
 import { err, ok, type Result } from '../../domain/shared/result.js';
 import type {

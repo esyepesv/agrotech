@@ -3,7 +3,10 @@ import { z } from 'zod';
 import type { FarmContext } from '../../domain/farm/farm-context.js';
 import type { Intent } from '../../domain/intent/intent.js';
 import { err, ok, type Result } from '../../domain/shared/result.js';
-import type { ClassifierError, IntentClassifier } from '../../application/ports/intent-classifier.js';
+import type {
+  ClassifierError,
+  IntentClassifier,
+} from '../../application/ports/intent-classifier.js';
 
 const SYSTEM_PROMPT = [
   'Eres el router de un asistente porcícola por WhatsApp/Telegram. Tu única',

@@ -18,7 +18,10 @@ export function partosPorAno(farrowingCount: number, entryDate: Date, now: Date)
 }
 
 /** kg de concentrado por kg ganado. `undefined` si no hubo ganancia (evita división por cero/negativos). */
-export function conversionAlimenticia(kgConcentrado: number, kgGanados: number): number | undefined {
+export function conversionAlimenticia(
+  kgConcentrado: number,
+  kgGanados: number,
+): number | undefined {
   if (kgGanados <= 0) return undefined;
   return kgConcentrado / kgGanados;
 }

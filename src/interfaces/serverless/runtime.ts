@@ -85,7 +85,9 @@ export async function processIncoming(message: IncomingMessage): Promise<void> {
     }
 
     const gateway = container.resolveGateway(message.channel);
-    await container.answerQuery.handle(message, gateway);
+    // v1.1: el orquestador enruta por intención; una pregunta de
+    // conocimiento sigue cayendo en AnswerQuery (rama por defecto).
+    await container.handleIncomingMessage.handle(message, gateway);
   } catch (error: unknown) {
     logger.error(
       { err: error, messageId: message.messageId, channel: message.channel },

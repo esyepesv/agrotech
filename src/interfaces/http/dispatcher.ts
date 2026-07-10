@@ -55,7 +55,9 @@ export class AnswerQueryDispatcher implements WebhookDispatcher {
       }
 
       const gateway = this.container.resolveGateway(message.channel);
-      await this.container.answerQuery.handle(message, gateway);
+      // v1.1: el orquestador enruta por intención; una pregunta de
+      // conocimiento sigue cayendo en AnswerQuery (rama por defecto).
+      await this.container.handleIncomingMessage.handle(message, gateway);
     } catch (error: unknown) {
       this.logger.error(
         { err: error, messageId: message.messageId, channel: message.channel },

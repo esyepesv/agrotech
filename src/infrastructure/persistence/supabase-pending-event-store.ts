@@ -30,7 +30,11 @@ const farmEventDraftSchema = z.object({
 });
 
 const entityStubSchema = z.discriminatedUnion('entity', [
-  z.object({ entity: z.literal('farm'), name: z.string().min(1), ownerName: z.string().optional() }),
+  z.object({
+    entity: z.literal('farm'),
+    name: z.string().min(1),
+    ownerName: z.string().optional(),
+  }),
   z.object({ entity: z.literal('sow'), chapeta: z.string().min(1) }),
   z.object({
     entity: z.literal('lot'),

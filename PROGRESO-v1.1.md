@@ -8,6 +8,7 @@
 ## 2. Checklist por corte
 
 ### Corte 0 — Esqueleto del módulo farm
+
 - [x] Fase A: PLAN-v1.1.md aprobado (2026-07-09)
 - [x] Rama `feat/v1.1-corte-0` + PROGRESO inicial
 - [x] `domain/farm/` + `domain/intent/` + tests puros de dominio (2026-07-10)
@@ -20,22 +21,26 @@
 - [x] DoD: typecheck + lint + 118 tests verdes; cero cambio de runtime v1 (2026-07-10)
 
 ### Corte 1 — Persistencia real + Inventario end-to-end
-- [ ] Migración `supabase/migrations/0003_farm_module.sql`
-- [ ] Repositorios Supabase (farm, inventory, farm-event, pending-event)
-- [ ] `LlmIntentClassifier` + `LlmEventExtractor` (OpenRouter + zod)
-- [ ] Env vars nuevas (`INTENT_MODEL`, `EXTRACTOR_MODEL`, `PENDING_EVENT_TTL_SECONDS`) + `.env.example`
-- [ ] Cableado en container + dispatcher + runtime serverless
-- [ ] RegisterFarm mínimo + siembra de inventario conversacional
-- [ ] Escenario manual por Telegram (compra → consumo voz → confirmar → saldo → gasto)
-- [ ] DoD
+
+- [x] Migración `supabase/migrations/0003_farm_module.sql` (2026-07-10) — **PENDIENTE DE APLICAR por Stiven (B1)**
+- [x] Repositorios Supabase (farm, inventory, farm-event, pending-event + sow/lot mínimos) (2026-07-10)
+- [x] `LlmIntentClassifier` + `LlmEventExtractor` (OpenRouter + zod; needsVetReview forzado por sistema) (2026-07-10)
+- [x] Env vars nuevas (`INTENT_MODEL`, `EXTRACTOR_MODEL`, `PENDING_EVENT_TTL_SECONDS`) + `.env.example` (2026-07-10)
+- [x] Cableado en container + dispatcher + runtime serverless (2026-07-10)
+- [x] RegisterFarm mínimo con cierre anónimo (`ConfirmFarmEvent.handleAnonymous`) (2026-07-10)
+- [ ] Escenario manual por Telegram (compra → consumo voz → confirmar → saldo → gasto) — **bloqueado por B1**
+- [ ] DoD (falta verificación final + escenario manual)
 
 ### Corte 2 — Lotes (pre-cebo/ceba)
+
 - [ ] Ciclo de lote + conversión alimenticia + costo por kg + consultas
 
 ### Corte 3 — Cría individual
+
 - [ ] Eventos reproductivos + KPIs (diasAbiertos, partosPorAno) + onboarding por chapeta
 
 ### Corte 4 — Plan sanitario (read-back) + seguridad
+
 - [ ] StaticSanitaryPlanProvider + seed + remind_from_plan + suite de seguridad completa
 
 ## 3. Decisiones tomadas
@@ -53,11 +58,15 @@
 - **2026-07-10 — `idGenerator` inyectado** en ConfirmFarmEvent/RegisterFarm: application no importa `node:crypto`; el container inyectará `randomUUID` en Corte 1.
 - **2026-07-10 — Turnos farm se registran con `action: 'answer'`**: `ConversationTurn.action` solo admite acciones de SafetyDecision v1; distinguir ramas farm en métricas queda para más adelante si hace falta.
 - **2026-07-10 — Cierre del alta de granja para usuario 100% anónimo queda en Corte 1** (el "sí" de un no-operario no puede resolver ConfirmFarmEvent aún): coincide con "RegisterFarm mínimo" listado en el Corte 1 del plan.
+- **2026-07-10 — `ConfirmFarmEvent.handleAnonymous(reply, hash)`**: el pending de un usuario no registrado vive bajo el hash del canal y solo puede ser un alta de granja; cualquier otro pending anónimo se descarta. El orquestador usa `pendingKey = operatorId | hash`.
+- **2026-07-10 — Repos Supabase de sow/lot creados ya en Corte 1** (el plan los difería a Cortes 2–3): `ConfirmFarmEvent` los exige en deps y las tablas ya existen; evita adaptadores no-op.
+- **2026-07-10 — `cleanFarmName` quita frases de intención** ("quiero registrar mi granja X" → "X"); si no queda nada, pregunta el nombre.
+- **2026-07-10 — needsVetReview siempre true por sistema** en el extractor (regla dura §12.2 reforzada): el modelo nunca decide ese campo.
 
 ## 4. Bloqueos y preguntas abiertas
 
-- **B1 (futuro, Corte 1):** la migración `0003_farm_module.sql` es de aplicación manual — Stiven debe aplicarla en Supabase (SQL Editor o `supabase db push`) antes de la prueba end-to-end. Se avisará aquí cuando esté lista.
-- Sin bloqueos activos para el Corte 0.
+- **B1 (ACTIVO):** `supabase/migrations/0003_farm_module.sql` ya está lista y **debe aplicarla Stiven** en Supabase (SQL Editor o `supabase db push`) antes de probar el Corte 1 end-to-end por Telegram. Hasta entonces, el bot en producción con el nuevo router respondería con errores de persistencia en las ramas farm (las preguntas de conocimiento siguen funcionando: caen en AnswerQuery).
+- Limitación conocida (Corte 1): si un usuario anónimo responde el nombre de su granja en un turno separado ("¿Cómo se llama tu granja?" → "Villa Clara"), depende de que el clasificador marque ese texto como onboarding; si lo marca unknown, cae al asesor. El flujo multi-turno robusto queda anotado como mejora.
 
 ## 5. Próximo paso concreto
 

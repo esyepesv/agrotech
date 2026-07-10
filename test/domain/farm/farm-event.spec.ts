@@ -8,7 +8,10 @@ import type {
 } from '../../../src/domain/farm/farm-event.js';
 import { describeDraft, isDraftComplete } from '../../../src/domain/farm/farm-event.js';
 
-function draftOf(payload: FarmEventDraft['payload'], camposFaltantes: string[] = []): FarmEventDraft {
+function draftOf(
+  payload: FarmEventDraft['payload'],
+  camposFaltantes: string[] = [],
+): FarmEventDraft {
   return {
     payload,
     confidence: 0.9,

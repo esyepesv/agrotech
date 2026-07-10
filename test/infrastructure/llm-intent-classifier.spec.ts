@@ -18,7 +18,10 @@ describe.skipIf(!process.env.LLM_API_KEY)('LlmIntentClassifier (integración rea
       apiKey: process.env.LLM_API_KEY,
       baseURL: process.env.LLM_BASE_URL ?? 'https://openrouter.ai/api/v1',
     });
-    return new LlmIntentClassifier(client, process.env.INTENT_MODEL ?? 'anthropic/claude-haiku-4.5');
+    return new LlmIntentClassifier(
+      client,
+      process.env.INTENT_MODEL ?? 'anthropic/claude-haiku-4.5',
+    );
   }
 
   it('reporta un hecho de alimentación → log_event', async () => {

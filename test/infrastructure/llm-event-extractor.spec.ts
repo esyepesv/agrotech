@@ -16,7 +16,10 @@ describe.skipIf(!process.env.LLM_API_KEY)('LlmEventExtractor (integración real)
       apiKey: process.env.LLM_API_KEY,
       baseURL: process.env.LLM_BASE_URL ?? 'https://openrouter.ai/api/v1',
     });
-    return new LlmEventExtractor(client, process.env.EXTRACTOR_MODEL ?? 'anthropic/claude-sonnet-4.5');
+    return new LlmEventExtractor(
+      client,
+      process.env.EXTRACTOR_MODEL ?? 'anthropic/claude-sonnet-4.5',
+    );
   }
 
   it('extrae feed_delivery del ejemplo canónico con qty 3 y unit bulto', async () => {

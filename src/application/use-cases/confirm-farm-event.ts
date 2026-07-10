@@ -58,7 +58,27 @@ export class ConfirmFarmEvent {
     if (pending.kind === 'farm_event') {
       return this.confirmFarmEvent(pending.draft, operator, farm);
     }
-    return this.confirmEntityStub(pending.entity, operator, farm);
+    return this.confirmEntityStub(pending.entity, operator.channelUserHash, farm);
+  }
+
+  /**
+   * Confirmación de un usuario AÚN NO registrado (su pending vive bajo el
+   * hash del canal, no bajo un OperatorId): el único pending legítimo en ese
+   * estado es el alta de su granja (RegisterFarm). Cualquier otro tipo se
+   * descarta en silencio — no debería existir sin operario.
+   */
+  async handleAnonymous(reply: 'confirm' | 'cancel', channelUserHash: string): Promise<FarmReply> {
+    const pending = await this.deps.pendingEventStore.takePending(channelUserHash);
+    if (!pending) {
+      return { text: NO_PENDING_MESSAGE };
+    }
+    if (reply === 'cancel') {
+      return { text: CANCELLED_MESSAGE };
+    }
+    if (pending.kind !== 'register_entity' || pending.entity.entity !== 'farm') {
+      return { text: NO_PENDING_MESSAGE };
+    }
+    return this.confirmFarmStub(pending.entity.name, pending.entity.ownerName, channelUserHash);
   }
 
   private async confirmFarmEvent(
@@ -180,12 +200,12 @@ export class ConfirmFarmEvent {
 
   private async confirmEntityStub(
     entity: EntityStub,
-    operator: Operator,
+    channelUserHash: string,
     farm: Farm,
   ): Promise<FarmReply> {
     switch (entity.entity) {
       case 'farm':
-        return this.confirmFarmStub(entity.name, entity.ownerName, operator);
+        return this.confirmFarmStub(entity.name, entity.ownerName, channelUserHash);
       case 'sow':
         return this.confirmSowStub(entity.chapeta, farm);
       case 'lot':
@@ -198,7 +218,7 @@ export class ConfirmFarmEvent {
   private async confirmFarmStub(
     name: string,
     ownerName: string | undefined,
-    operator: Operator,
+    channelUserHash: string,
   ): Promise<FarmReply> {
     const newFarm: Farm = {
       id: this.deps.idGenerator(),
@@ -214,7 +234,7 @@ export class ConfirmFarmEvent {
     const newOperator: Operator = {
       id: this.deps.idGenerator(),
       farmId: newFarm.id,
-      channelUserHash: operator.channelUserHash,
+      channelUserHash,
       role: 'admin',
     };
     const savedOperator = await this.deps.farmRepository.saveOperator(newOperator);

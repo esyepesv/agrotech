@@ -81,15 +81,14 @@ export class QueryFarmState {
     if (!anyCost) {
       return { text: NO_COST_DATA_MESSAGE };
     }
-    return { text: `Este mes llevas gastado aproximadamente $${Math.round(total)} en concentrado.` };
+    return {
+      text: `Este mes llevas gastado aproximadamente $${Math.round(total)} en concentrado.`,
+    };
   }
 }
 
 function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+  return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 export const QUERY_FARM_STATE_MESSAGES = {

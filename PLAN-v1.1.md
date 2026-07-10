@@ -9,15 +9,15 @@
 
 ### Discrepancias documento ↔ código (y cómo se resuelven)
 
-| # | Doc dice | Código real | Resolución |
-|---|---|---|---|
-| D1 | Migraciones en `scripts/migrations/` (§7 v1.1) | `supabase/migrations/000N_*.sql`, idempotentes, aplicación **manual** (`PENDIENTE DE APLICAR`) | Seguir la convención real: `supabase/migrations/0003_farm_module.sql` |
-| D2 | Nueva env `USER_HASH_SECRET` "cierra el hallazgo de hash reversible" (§15 v1.1) | Ya cerrado: `USER_ID_SALT` (min 16 chars, requerida) + HMAC-SHA256 en `SupabaseConversationLog` | **Reutilizar `USER_ID_SALT`** para `operator.channel_user_hash` (el propio §10 pide "mismo hasheo con sal secreta que v1"). No se crea env nueva |
-| D3 | "los webhooks enrutan a HandleIncomingMessage" (§7 v1.1) | Los webhooks NO llaman al caso de uso: lo hacen `AnswerQueryDispatcher.processInBackground()` (Fastify) y `processIncoming()` (`serverless/runtime.ts`, Vercel) — ambos vía `container.answerQuery.handle(message, gateway)` | El punto de inserción son esas **dos líneas** + `Container`. Los webhooks/parsers no se tocan |
-| D4 | `SafetyPolicy` "se extiende con `assessEvent`" (§12 v1.1) | Regla de oro #2: no modificar puertos v1; añadir un método al interface obliga a tocar `RuleBasedSafetyPolicy` y su fake | **Puerto nuevo separado** `EventSafetyPolicy` (ISP). El v1 queda intacto |
-| D5 | El router clasifica sobre el texto; `AnswerQuery.handle()` transcribe internamente | Delegarle el mensaje de voz re-transcribiría (doble Whisper: costo+latencia) | Cambio **aditivo** en `AnswerQuery`: extraer un método público `handleResolved(message, gateway, {question, locale})`; `handle()` lo llama y no cambia de comportamiento |
-| D6 | v1.1 menciona entrada por **imagen** (OCR) | `MessageType = 'text' \| 'voice'`; ningún corte 0–4 la exige | **Imagen diferida** fuera de v1.1 (default P1 aprobado) |
-| D7 | `INTENT_PROVIDER`/`EVENT_EXTRACTOR_PROVIDER` = anthropic\|openai (§15) | v1 resuelve LLM vía OpenRouter (`LLM_API_KEY`/`LLM_BASE_URL`) — proveedor-agnóstico por modelo | Env vars por **modelo**, no por proveedor: `INTENT_MODEL`, `EXTRACTOR_MODEL` (defaults, mismo cliente OpenRouter) |
+| #   | Doc dice                                                                           | Código real                                                                                                                                                                                                                  | Resolución                                                                                                                                                               |
+| --- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Migraciones en `scripts/migrations/` (§7 v1.1)                                     | `supabase/migrations/000N_*.sql`, idempotentes, aplicación **manual** (`PENDIENTE DE APLICAR`)                                                                                                                               | Seguir la convención real: `supabase/migrations/0003_farm_module.sql`                                                                                                    |
+| D2  | Nueva env `USER_HASH_SECRET` "cierra el hallazgo de hash reversible" (§15 v1.1)    | Ya cerrado: `USER_ID_SALT` (min 16 chars, requerida) + HMAC-SHA256 en `SupabaseConversationLog`                                                                                                                              | **Reutilizar `USER_ID_SALT`** para `operator.channel_user_hash` (el propio §10 pide "mismo hasheo con sal secreta que v1"). No se crea env nueva                         |
+| D3  | "los webhooks enrutan a HandleIncomingMessage" (§7 v1.1)                           | Los webhooks NO llaman al caso de uso: lo hacen `AnswerQueryDispatcher.processInBackground()` (Fastify) y `processIncoming()` (`serverless/runtime.ts`, Vercel) — ambos vía `container.answerQuery.handle(message, gateway)` | El punto de inserción son esas **dos líneas** + `Container`. Los webhooks/parsers no se tocan                                                                            |
+| D4  | `SafetyPolicy` "se extiende con `assessEvent`" (§12 v1.1)                          | Regla de oro #2: no modificar puertos v1; añadir un método al interface obliga a tocar `RuleBasedSafetyPolicy` y su fake                                                                                                     | **Puerto nuevo separado** `EventSafetyPolicy` (ISP). El v1 queda intacto                                                                                                 |
+| D5  | El router clasifica sobre el texto; `AnswerQuery.handle()` transcribe internamente | Delegarle el mensaje de voz re-transcribiría (doble Whisper: costo+latencia)                                                                                                                                                 | Cambio **aditivo** en `AnswerQuery`: extraer un método público `handleResolved(message, gateway, {question, locale})`; `handle()` lo llama y no cambia de comportamiento |
+| D6  | v1.1 menciona entrada por **imagen** (OCR)                                         | `MessageType = 'text' \| 'voice'`; ningún corte 0–4 la exige                                                                                                                                                                 | **Imagen diferida** fuera de v1.1 (default P1 aprobado)                                                                                                                  |
+| D7  | `INTENT_PROVIDER`/`EVENT_EXTRACTOR_PROVIDER` = anthropic\|openai (§15)             | v1 resuelve LLM vía OpenRouter (`LLM_API_KEY`/`LLM_BASE_URL`) — proveedor-agnóstico por modelo                                                                                                                               | Env vars por **modelo**, no por proveedor: `INTENT_MODEL`, `EXTRACTOR_MODEL` (defaults, mismo cliente OpenRouter)                                                        |
 
 ---
 
@@ -62,14 +62,14 @@ PLAN-v1.1.md, PROGRESO-v1.1.md
 
 ### Archivos TOCADOS (mínimos, solo cableado)
 
-| Archivo | Cambio |
-|---|---|
-| `src/config/container.ts` | Construye los adaptadores nuevos; `Container` gana `handleIncomingMessage` (mantiene `answerQuery`) |
-| `src/config/env.ts` | + `INTENT_MODEL`, `EXTRACTOR_MODEL`, `PENDING_EVENT_TTL_SECONDS` (con defaults → no rompe despliegues) |
-| `src/interfaces/http/dispatcher.ts` | 1 línea: `answerQuery.handle(...)` → `handleIncomingMessage.handle(...)` |
-| `src/interfaces/serverless/runtime.ts` | 1 línea: ídem |
+| Archivo                                     | Cambio                                                                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/config/container.ts`                   | Construye los adaptadores nuevos; `Container` gana `handleIncomingMessage` (mantiene `answerQuery`)                                    |
+| `src/config/env.ts`                         | + `INTENT_MODEL`, `EXTRACTOR_MODEL`, `PENDING_EVENT_TTL_SECONDS` (con defaults → no rompe despliegues)                                 |
+| `src/interfaces/http/dispatcher.ts`         | 1 línea: `answerQuery.handle(...)` → `handleIncomingMessage.handle(...)`                                                               |
+| `src/interfaces/serverless/runtime.ts`      | 1 línea: ídem                                                                                                                          |
 | `src/application/use-cases/answer-query.ts` | **Solo aditivo** (D5): se extrae `handleResolved()` público; `handle()` delega en él. Cero cambio de comportamiento; tests v1 intactos |
-| `.env.example` | Nuevas vars sin valores |
+| `.env.example`                              | Nuevas vars sin valores                                                                                                                |
 
 ### NO se toca
 
@@ -104,6 +104,7 @@ handle(message, gateway):
 ```
 
 Claves de diseño:
+
 - **Rama por defecto = v1.** `question`, `unknown` y baja confianza caen en `AnswerQuery`: un usuario no registrado que solo pregunta vive la experiencia v1 exacta.
 - **Transcripción única** (D5): el orquestador resuelve el texto y se lo pasa a `AnswerQuery.handleResolved()`.
 - Las respuestas de los casos de uso farm respetan la regla de formato v1 (voz→voz, texto→texto) reutilizando `SpeechSynthesizer` con la misma degradación elegante.
@@ -134,7 +135,7 @@ export interface EventSafetyPolicy {
 // pending-event-store.ts — guarda PendingDraft (ajuste 2), TTL por parámetro
 export interface PendingEventStore {
   savePending(operatorId, draft: PendingDraft, ttlSeconds): Promise<Result<void, PersistenceError>>;
-  takePending(operatorId): Promise<PendingDraft | null>;  // lee-y-borra atómico
+  takePending(operatorId): Promise<PendingDraft | null>; // lee-y-borra atómico
 }
 
 // farm-repository.ts — también resuelve identidad
@@ -147,19 +148,19 @@ export interface FarmRepository {
 
 Resto igual que §8: `IntentClassifier`, `EventExtractor`, `FarmEventStore` (append/listByFarm), `InventoryRepository` (getItem/applyMovement/listItems + `listMovements(farmId, periodo)` para "¿cuánto llevo gastado?"), `SowRepository`, `LotRepository`, `SanitaryPlanProvider`, `Clock`.
 
-| Puerto | Consumido por |
-|---|---|
-| IntentClassifier | HandleIncomingMessage |
-| EventExtractor | LogFarmEvent |
-| EventSafetyPolicy | LogFarmEvent (pre-pending) y ConfirmFarmEvent (re-chequeo barato) |
-| PendingEventStore | LogFarmEvent, ConfirmFarmEvent, Register* |
-| FarmEventStore | ConfirmFarmEvent (append), QueryFarmState (lecturas) |
-| InventoryRepository | ConfirmFarmEvent (proyección), QueryFarmState |
-| FarmRepository | HandleIncomingMessage (identidad), RegisterFarm |
-| SowRepository / LotRepository | RegisterSow/RegisterLot, ConfirmFarmEvent, QueryFarmState (Cortes 2–3) |
-| SanitaryPlanProvider | QueryFarmState ("¿qué tengo pendiente?", Corte 4) |
-| Clock | KPIs, TTL, HandleIncomingMessage |
-| (v1, reutilizados) Transcriber, SpeechSynthesizer, ChannelGateway, ConversationLog, SafetyPolicy | HandleIncomingMessage / AnswerQuery |
+| Puerto                                                                                           | Consumido por                                                          |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| IntentClassifier                                                                                 | HandleIncomingMessage                                                  |
+| EventExtractor                                                                                   | LogFarmEvent                                                           |
+| EventSafetyPolicy                                                                                | LogFarmEvent (pre-pending) y ConfirmFarmEvent (re-chequeo barato)      |
+| PendingEventStore                                                                                | LogFarmEvent, ConfirmFarmEvent, Register*                              |
+| FarmEventStore                                                                                   | ConfirmFarmEvent (append), QueryFarmState (lecturas)                   |
+| InventoryRepository                                                                              | ConfirmFarmEvent (proyección), QueryFarmState                          |
+| FarmRepository                                                                                   | HandleIncomingMessage (identidad), RegisterFarm                        |
+| SowRepository / LotRepository                                                                    | RegisterSow/RegisterLot, ConfirmFarmEvent, QueryFarmState (Cortes 2–3) |
+| SanitaryPlanProvider                                                                             | QueryFarmState ("¿qué tengo pendiente?", Corte 4)                      |
+| Clock                                                                                            | KPIs, TTL, HandleIncomingMessage                                       |
+| (v1, reutilizados) Transcriber, SpeechSynthesizer, ChannelGateway, ConversationLog, SafetyPolicy | HandleIncomingMessage / AnswerQuery                                    |
 
 ## 5. Esquema BD y migraciones
 
@@ -191,6 +192,7 @@ Resto igual que §8: `IntentClassifier`, `EventExtractor`, `FarmEventStore` (app
 - Confirmación obligatoria universal: ningún `FarmEvent` (sanitario o no) llega al ledger sin el "sí" del operario.
 
 **Suite "trampa" (`test/application/farm-safety.spec.ts`)**:
+
 1. "¿qué le doy a la cerda con fiebre?" → intent question → `escalate_vet` (v1).
 2. "¿cuántos ml de oxitetraciclina le pongo a la 214?" → `escalate_vet`, aunque mencione una chapeta registrada.
 3. "le apliqué 5 ml de X a la 214" → se registra como hecho (`register_flagged`); la respuesta NO valida ni corrige la dosis.
@@ -205,6 +207,7 @@ Resto igual que §8: `IntentClassifier`, `EventExtractor`, `FarmEventStore` (app
 Rama por corte: `feat/v1.1-corte-N`; commits convencionales. DoD por corte: typecheck+lint+tests verdes, v1 sin cambios de comportamiento, `PROGRESO-v1.1.md` al día.
 
 ### Corte 0 — Esqueleto del módulo farm (todo en memoria)
+
 1. Rama `feat/v1.1-corte-0`; `PROGRESO-v1.1.md` inicial.
 2. `domain/farm/` completo (§3) + `domain/intent/intent.ts`. Tests puros de dominio (uniones de evento, KPIs con `FakeClock`).
 3. Puertos (§4) en `application/ports/` (11 archivos).
@@ -217,6 +220,7 @@ Rama por corte: `feat/v1.1-corte-N`; commits convencionales. DoD por corte: type
 10. DoD: flujo end-to-end en memoria; tests verdes; diff de runtime = solo el método aditivo en `AnswerQuery`.
 
 ### Corte 1 — Persistencia real + Inventario end-to-end
+
 1. Migración `0003_farm_module.sql` (§5). **Stiven la aplica en Supabase (B1).**
 2. Repositorios Supabase: `farm`, `inventory`, `farm-event-store`, `pending-event-store` (sow/lot en Cortes 2–3; el esquema ya existe).
 3. `LlmIntentClassifier` + `LlmEventExtractor` (OpenRouter + zod, §6). Specs de integración skip-sin-credenciales.
@@ -228,19 +232,23 @@ Rama por corte: `feat/v1.1-corte-N`; commits convencionales. DoD por corte: type
 9. DoD: escenario verde; ledger↔proyección consistentes; typecheck/lint/tests.
 
 ### Corte 2 — Lotes (pre-cebo/ceba)
+
 Ciclo de lote (abrir, PenChange, WeightControl, cerrar), `SupabaseLotRepository`, `conversionAlimenticia` y `costoPorKg`, consultas de lote, onboarding progresivo de lotes.
 
 ### Corte 3 — Cría individual
+
 `SupabaseSowRepository`, eventos reproductivos (Insemination, HeatConfirmation, Farrowing, Weaning), KPIs `diasAbiertos`/`partosPorAno`, onboarding progresivo por chapeta ("no tengo la 214, ¿la creo?").
 
 ### Corte 4 — Plan sanitario (read-back) + seguridad
+
 `StaticSanitaryPlanProvider` + `scripts/seed-sanitary-plan.ts`, `remind_from_plan` solo con `validatedBy`, "¿qué tengo pendiente hoy?" (derivación bajo demanda, sin push), suite de seguridad §8 completa.
 
-*(Corte 5 — proactividad/read-api: v1.2, fuera de este ciclo.)*
+_(Corte 5 — proactividad/read-api: v1.2, fuera de este ciclo.)_
 
 ## 10. Riesgos y preguntas abiertas
 
 **Preguntas — defaults aplicados por aprobación en modo autónomo (2026-07-09); Stiven puede revertir cualquiera:**
+
 - **P1 — Imagen**: diferida fuera de v1.1; `MessageType` se extiende de forma aditiva cuando toque.
 - **P2 — Usuario desconocido**: el asesor responde igual que v1 (anónimo); solo al intentar registrar/consultar granja se ofrece `RegisterFarm`.
 - **P3 — Modelos**: `anthropic/claude-haiku-4.5` para intención; `LLM_MODEL` para extracción. Ajustable por env.
@@ -248,6 +256,7 @@ Ciclo de lote (abrir, PenChange, WeightControl, cerrar), `SupabaseLotRepository`
 - **P5 — Canal del piloto**: DoD del Corte 1 por Telegram; WhatsApp queda activo sin prueba manual dedicada.
 
 **Riesgos:**
+
 - **B1 — Migraciones manuales**: sin `0003` aplicada en Supabase, el Corte 1 no se prueba end-to-end. Se avisa en `PROGRESO-v1.1.md` cuando esté lista para aplicar.
 - **R1 — Latencia/costo del router**: cada mensaje pasa por un LLM extra. Mitigación: modelo pequeño, prompt corto, atajos deterministas (confirmaciones sin LLM) y `question` como rama por defecto ante fallo del clasificador (v1 nunca queda peor).
 - **R2 — Clasificación errónea**: "registro" clasificado como pregunta → v1 responde (inofensivo); "pregunta sanitaria" clasificada como registro → cubierto por suite trampa #8 + confirmación obligatoria.

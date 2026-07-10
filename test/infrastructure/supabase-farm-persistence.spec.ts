@@ -61,7 +61,11 @@ describe.skipIf(!hasSupabaseCreds || !farmTableReady)(
       // se intenta borrar lo creado (datos sintéticos con prefijo test-).
       // No construye cliente si no hay nada que limpiar (p. ej. si la suite
       // fue saltada y ningún `it()` llegó a correr).
-      if (createdFarmIds.length === 0 && createdOperatorIds.length === 0 && createdPendingHashes.length === 0) {
+      if (
+        createdFarmIds.length === 0 &&
+        createdOperatorIds.length === 0 &&
+        createdPendingHashes.length === 0
+      ) {
         return;
       }
       const client = getClient();
@@ -114,7 +118,9 @@ describe.skipIf(!hasSupabaseCreds || !farmTableReady)(
 
     it('hash desconocido → findOperatorByHash devuelve null', async () => {
       const farmRepository = new SupabaseFarmRepository(getClient());
-      const found = await farmRepository.findOperatorByHash(`test-hash-inexistente-${randomUUID()}`);
+      const found = await farmRepository.findOperatorByHash(
+        `test-hash-inexistente-${randomUUID()}`,
+      );
       expect(found).toBeNull();
     });
 

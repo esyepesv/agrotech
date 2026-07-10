@@ -1,11 +1,5 @@
 export type IntentKind =
-  | 'question'
-  | 'log_event'
-  | 'query_state'
-  | 'onboarding'
-  | 'confirm'
-  | 'cancel'
-  | 'unknown';
+  'question' | 'log_event' | 'query_state' | 'onboarding' | 'confirm' | 'cancel' | 'unknown';
 
 export interface Intent {
   readonly kind: IntentKind;
