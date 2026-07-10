@@ -17,6 +17,17 @@ const envSchema = z
     LLM_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
     LLM_MODEL: z.string().min(1).default('anthropic/claude-sonnet-4.5'),
 
+    // v1.1 — router de intención y extractor de eventos (módulo farm).
+    // Mismo cliente OpenRouter que LLM_API_KEY; se configuran por MODELO
+    // (no por proveedor) igual que LLM_MODEL. El clasificador usa un modelo
+    // pequeño: corre en cada mensaje y debe ser rápido/barato (R1 del plan).
+    INTENT_MODEL: z.string().min(1).default('anthropic/claude-haiku-4.5'),
+    EXTRACTOR_MODEL: z.string().min(1).default('anthropic/claude-sonnet-4.5'),
+
+    // TTL del estado conversacional (pending a confirmar); pasado esto, el
+    // "sí" tardío ya no encuentra nada que confirmar (PLAN-v1.1.md §7).
+    PENDING_EVENT_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+
     OPENAI_API_KEY: z.string().min(1),
     STT_MODEL: z.string().min(1).default('whisper-1'),
     TTS_MODEL: z.string().min(1).default('tts-1'),
