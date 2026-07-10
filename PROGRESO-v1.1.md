@@ -70,10 +70,18 @@
 
 ## 5. Próximo paso concreto
 
-Corte 1: migración `0003_farm_module.sql`, repos Supabase, adaptadores LLM (clasificador/extractor), env vars nuevas y cableado en container/dispatchers. Recordatorio B1: la migración la aplica Stiven manualmente.
+**Esperando a Stiven (B1): aplicar `0003_farm_module.sql` en Supabase.** En cuanto esté:
+
+1. Correr los specs de integración reales (`vitest` con `.env` local: Supabase + OpenRouter) y ajustar lo que falle.
+2. Merge de PR #1 (Corte 0) y PR #2 (Corte 1) → deploy en Vercel.
+3. Escenario manual por Telegram (guion en el PR #2) y ajustes.
+4. Solo entonces se cierra el Corte 1 y arranca el Corte 2.
+
+Regla nueva (2026-07-10, pedida por Stiven): **cada corte cierra con pruebas end-to-end reales**, no solo la suite unitaria.
 
 ## 6. Última actualización
 
+- **2026-07-10 ~12:55** — Corte 1 código-completo (`aca5ef5`): cableado de producción, alta anónima, 137 tests verdes. PR #2 abierto (stacked sobre PR #1). Sonda confirma que la migración 0003 AÚN NO está aplicada en Supabase (spec de integración se salta) → esperando B1 para e2e.
 - **2026-07-10 ~08:20** — Corte 0 COMPLETADO (`24caa38`): 6 casos de uso, orquestador, RuleBasedEventSafetyPolicy, 21 tests nuevos (118 pass total). DoD verde. Producción v1 sin tocar.
 - **2026-07-10 ~07:55** — Fase 1 del Corte 0 commiteada (`0572db8`, 40 archivos): dominio farm/intent, 12 puertos, 10 fakes, 22 tests nuevos. Typecheck/lint/tests verdes (99 pass). Corregido `PlanScope` (lint). Avance ~10%.
 - **2026-07-09 ~00:15** — Fase A cerrada (PLAN-v1.1.md escrito y aprobado); creado PROGRESO-v1.1.md; arrancando Corte 0.
