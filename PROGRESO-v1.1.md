@@ -2,8 +2,8 @@
 
 ## 1. Estado general
 
-- **Corte actual:** Corte 0 — Esqueleto del módulo farm (en memoria)
-- **Avance del ciclo (Cortes 0–4):** ~5% (Fase A cerrada, Corte 0 arrancando)
+- **Corte actual:** Corte 0 — COMPLETADO (DoD verde). Siguiente: Corte 1.
+- **Avance del ciclo (Cortes 0–4):** ~25%
 
 ## 2. Checklist por corte
 
@@ -13,11 +13,11 @@
 - [x] `domain/farm/` + `domain/intent/` + tests puros de dominio (2026-07-10)
 - [x] Puertos nuevos en `application/ports/` (12, incl. persistence-error) (2026-07-10)
 - [x] Fakes in-memory en `test/application/fakes/` (10) (2026-07-10)
-- [ ] Casos de uso: LogFarmEvent, ConfirmFarmEvent, QueryFarmState, RegisterFarm/Sow/Lot
+- [x] Casos de uso: LogFarmEvent, ConfirmFarmEvent, QueryFarmState, RegisterFarm/Sow/Lot (2026-07-10)
 - [x] Cambio aditivo `AnswerQuery.handleResolved()` (suite v1 intacta) (2026-07-09)
-- [ ] `HandleIncomingMessage` (router + atajo determinista de confirmación)
-- [ ] Tests del orquestador (ruteo, registrar→confirmar→persistir, "no" cancela, campos faltantes, pregunta→AnswerQuery, desconocido→ofrece registro, pending expirado)
-- [ ] DoD: typecheck + lint + tests verdes; cero cambio de runtime v1
+- [x] `HandleIncomingMessage` (router + atajo determinista de confirmación) (2026-07-10)
+- [x] Tests del orquestador (11) + suite trampa de seguridad (8 + 2 todo para Corte 4) (2026-07-10)
+- [x] DoD: typecheck + lint + 118 tests verdes; cero cambio de runtime v1 (2026-07-10)
 
 ### Corte 1 — Persistencia real + Inventario end-to-end
 - [ ] Migración `supabase/migrations/0003_farm_module.sql`
@@ -49,6 +49,10 @@
 - **2026-07-09 — Corte 0 no toca producción**: el container sigue exponiendo solo v1; el orquestador se cablea con fakes solo en tests hasta el Corte 1.
 - **2026-07-10 — `PlanScope` como unión discriminada** (`{kind:'standard'} | {kind:'farm', farmId}`) en vez de `'standard' | FarmId`: ese literal colapsa a `string` (lint lo rechazó) y la unión hace tipado el chequeo de override.
 - **2026-07-10 — `parseShortReply` en dominio** (`domain/intent/short-reply.ts`): atajo determinista de confirmación/cancelación sin LLM, ≤4 palabras, normaliza tildes/signos.
+- **2026-07-10 — Casos de uso farm devuelven `FarmReply` (texto), no envían por gateway**: la entrega (voz/texto) y el registro del turno viven solo en el orquestador; se prueban sin canal.
+- **2026-07-10 — `idGenerator` inyectado** en ConfirmFarmEvent/RegisterFarm: application no importa `node:crypto`; el container inyectará `randomUUID` en Corte 1.
+- **2026-07-10 — Turnos farm se registran con `action: 'answer'`**: `ConversationTurn.action` solo admite acciones de SafetyDecision v1; distinguir ramas farm en métricas queda para más adelante si hace falta.
+- **2026-07-10 — Cierre del alta de granja para usuario 100% anónimo queda en Corte 1** (el "sí" de un no-operario no puede resolver ConfirmFarmEvent aún): coincide con "RegisterFarm mínimo" listado en el Corte 1 del plan.
 
 ## 4. Bloqueos y preguntas abiertas
 
@@ -57,9 +61,10 @@
 
 ## 5. Próximo paso concreto
 
-Fase 2 del Corte 0: casos de uso (`LogFarmEvent`, `ConfirmFarmEvent`, `QueryFarmState`, `Register*`), `RuleBasedEventSafetyPolicy`, orquestador `HandleIncomingMessage` y sus tests de aplicación.
+Corte 1: migración `0003_farm_module.sql`, repos Supabase, adaptadores LLM (clasificador/extractor), env vars nuevas y cableado en container/dispatchers. Recordatorio B1: la migración la aplica Stiven manualmente.
 
 ## 6. Última actualización
 
+- **2026-07-10 ~08:20** — Corte 0 COMPLETADO (`24caa38`): 6 casos de uso, orquestador, RuleBasedEventSafetyPolicy, 21 tests nuevos (118 pass total). DoD verde. Producción v1 sin tocar.
 - **2026-07-10 ~07:55** — Fase 1 del Corte 0 commiteada (`0572db8`, 40 archivos): dominio farm/intent, 12 puertos, 10 fakes, 22 tests nuevos. Typecheck/lint/tests verdes (99 pass). Corregido `PlanScope` (lint). Avance ~10%.
 - **2026-07-09 ~00:15** — Fase A cerrada (PLAN-v1.1.md escrito y aprobado); creado PROGRESO-v1.1.md; arrancando Corte 0.
