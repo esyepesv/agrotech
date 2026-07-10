@@ -28,8 +28,9 @@
 - [x] Env vars nuevas (`INTENT_MODEL`, `EXTRACTOR_MODEL`, `PENDING_EVENT_TTL_SECONDS`) + `.env.example` (2026-07-10)
 - [x] Cableado en container + dispatcher + runtime serverless (2026-07-10)
 - [x] RegisterFarm mínimo con cierre anónimo (`ConfirmFarmEvent.handleAnonymous`) (2026-07-10)
-- [ ] Escenario manual por Telegram (compra → consumo voz → confirmar → saldo → gasto) — **bloqueado por B1**
-- [ ] DoD (falta verificación final + escenario manual)
+- [x] Pruebas e2e reales (Supabase + OpenRouter): persistencia, clasificador, extractor y flujo inventario compra→consumo→saldo→gasto (2026-07-10)
+- [ ] Escenario manual por Telegram (requiere merge + deploy) — pendiente por Stiven
+- [x] DoD unitario verde (143 pass / 13 skip); e2e verde salvo escenario Telegram
 
 ### Corte 2 — Lotes (pre-cebo/ceba)
 
@@ -62,6 +63,8 @@
 - **2026-07-10 — Repos Supabase de sow/lot creados ya en Corte 1** (el plan los difería a Cortes 2–3): `ConfirmFarmEvent` los exige en deps y las tablas ya existen; evita adaptadores no-op.
 - **2026-07-10 — `cleanFarmName` quita frases de intención** ("quiero registrar mi granja X" → "X"); si no queda nada, pregunta el nombre.
 - **2026-07-10 — needsVetReview siempre true por sistema** en el extractor (regla dura §12.2 reforzada): el modelo nunca decide ese campo.
+- **2026-07-10 — Bug e2e corregido: fences markdown en salida LLM.** Claude vía OpenRouter envuelve el JSON en ```json ... ``` aunque se pida `json_object`; se añadió `extractJsonObject` (`src/infrastructure/llm/json-output.ts`) que despoja fences/texto antes de `JSON.parse`. Sin esto, TODA rama farm por LLM fallaba en producción. Detectado solo por la prueba e2e real (la suite unitaria usa fakes).
+- **2026-07-10 — "¿cuánto llevo gastado?" = consumo valorado, no compras.** QueryFarmState suma qty×costo de los movimientos `out` del mes (coincide con arquitectura-v1.1 §1 "cuánto llevo gastado en el lote 7" = costo imputado). En el e2e: comprar 10 y consumir 3 → gasto $285.000 (3×95.000), no $950.000. Es intencional; si Stiven prefiere "dinero desembolsado" (compras), es un cambio de una consulta.
 
 ## 4. Bloqueos y preguntas abiertas
 
@@ -81,6 +84,7 @@ Regla nueva (2026-07-10, pedida por Stiven): **cada corte cierra con pruebas end
 
 ## 6. Última actualización
 
+- **2026-07-10 ~13:05** — Migración aplicada (B1 resuelto). Pruebas e2e reales corridas: encontrado y corregido el bug de fences markdown (`ed2eb43`); flujo inventario completo verde contra Supabase+OpenRouter. DoD unitario 143 pass. Falta solo el escenario manual por Telegram (requiere merge+deploy). Los 2 fallos de la suite con credenciales son tests de integración de v1 (llm-answer-generator, speech-roundtrip) por timeout de 5s, no regresiones.
 - **2026-07-10 ~12:55** — Corte 1 código-completo (`aca5ef5`): cableado de producción, alta anónima, 137 tests verdes. PR #2 abierto (stacked sobre PR #1). Sonda confirma que la migración 0003 AÚN NO está aplicada en Supabase (spec de integración se salta) → esperando B1 para e2e.
 - **2026-07-10 ~08:20** — Corte 0 COMPLETADO (`24caa38`): 6 casos de uso, orquestador, RuleBasedEventSafetyPolicy, 21 tests nuevos (118 pass total). DoD verde. Producción v1 sin tocar.
 - **2026-07-10 ~07:55** — Fase 1 del Corte 0 commiteada (`0572db8`, 40 archivos): dominio farm/intent, 12 puertos, 10 fakes, 22 tests nuevos. Typecheck/lint/tests verdes (99 pass). Corregido `PlanScope` (lint). Avance ~10%.
