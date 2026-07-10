@@ -19,6 +19,7 @@ import type {
 } from '../../domain/farm/farm-event.js';
 import { err, ok, type Result } from '../../domain/shared/result.js';
 import type { EventExtractor, ExtractionError } from '../../application/ports/event-extractor.js';
+import { extractJsonObject } from '../llm/json-output.js';
 
 const SYSTEM_PROMPT = [
   'Eres un extractor de eventos de granja porcícola. A partir del mensaje',
@@ -163,7 +164,7 @@ export function parseDraftJson(
 ): Result<FarmEventDraft, ExtractionError> {
   let parsedJson: unknown;
   try {
-    parsedJson = JSON.parse(raw);
+    parsedJson = JSON.parse(extractJsonObject(raw));
   } catch {
     return err({ kind: 'invalid_output', message: `el extractor no devolvió JSON válido: ${raw}` });
   }

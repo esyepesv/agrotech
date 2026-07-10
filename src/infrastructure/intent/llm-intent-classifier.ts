@@ -7,6 +7,7 @@ import type {
   ClassifierError,
   IntentClassifier,
 } from '../../application/ports/intent-classifier.js';
+import { extractJsonObject } from '../llm/json-output.js';
 
 const SYSTEM_PROMPT = [
   'Eres el router de un asistente porcícola por WhatsApp/Telegram. Tu única',
@@ -83,7 +84,7 @@ export class LlmIntentClassifier implements IntentClassifier {
 export function parseIntentJson(raw: string): Result<Intent, ClassifierError> {
   let parsedJson: unknown;
   try {
-    parsedJson = JSON.parse(raw);
+    parsedJson = JSON.parse(extractJsonObject(raw));
   } catch {
     return err({
       kind: 'invalid_output',
