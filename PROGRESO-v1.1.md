@@ -2,8 +2,9 @@
 
 ## 1. Estado general
 
-- **Corte actual:** Corte 0 — COMPLETADO (DoD verde). Siguiente: Corte 1.
-- **Avance del ciclo (Cortes 0–4):** ~25%
+- **⏸️ DESARROLLO EN PAUSA (2026-07-10):** Stiven va a replantear el enfoque y trabajar más en los specs (`arquitectura-v1.1.md` / `instrucciones-claude-code-v1.1.md` / `PLAN-v1.1.md`) antes de continuar. NO arrancar el Corte 2 ni tocar código de producción hasta que confirme el nuevo enfoque. Lo hecho (Cortes 0 y 1) queda en sus ramas/PRs por si sirve, pero PUEDE cambiar o descartarse según el replanteo.
+- **Corte actual:** Corte 1 código-completo + verificado e2e; pendiente solo prueba manual por Telegram. Siguiente paso original era Corte 2, ahora en espera del replanteo.
+- **Avance del ciclo (Cortes 0–4):** ~40% del alcance original (sujeto a cambio).
 
 ## 2. Checklist por corte
 
