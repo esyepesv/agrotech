@@ -62,8 +62,18 @@ export class RegisterFarm {
   }
 }
 
+// Frases de intención que el clasificador enruta a onboarding pero que no
+// son el nombre ("quiero registrar mi granja La Esperanza" → "La Esperanza").
+// Si tras quitarlas no queda nada, se pregunta el nombre explícitamente.
+const ONBOARDING_BOILERPLATE =
+  /\b(quiero|quisiera|necesito|deseo|voy a|como)\b|\b(registrar(me)?|registro|crear|inscribir(me)?|empezar|comenzar|usar)\b|\b(mi|una|la|el)\s+(granja|finca|marranera|porcicola|cuenta)\b|\bgranja\b/gi;
+
 function cleanFarmName(text: string): string {
-  return text.trim().replace(/\s+/g, ' ');
+  const withoutBoilerplate = text.replace(ONBOARDING_BOILERPLATE, ' ');
+  return withoutBoilerplate
+    .replace(/[¿?¡!.,;:"']/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
 }
 
 export const REGISTER_FARM_MESSAGES = {

@@ -3,7 +3,10 @@ import type { Farm } from '../../src/domain/farm/farm.js';
 import type { FarmEventDraft, MedicationApplication } from '../../src/domain/farm/farm-event.js';
 import type { Operator } from '../../src/domain/farm/operator.js';
 import type { IncomingMessage } from '../../src/domain/message/incoming-message.js';
-import { ANSWER_QUERY_MESSAGES, AnswerQuery } from '../../src/application/use-cases/answer-query.js';
+import {
+  ANSWER_QUERY_MESSAGES,
+  AnswerQuery,
+} from '../../src/application/use-cases/answer-query.js';
 import { ConfirmFarmEvent } from '../../src/application/use-cases/confirm-farm-event.js';
 import { HandleIncomingMessage } from '../../src/application/use-cases/handle-incoming-message.js';
 import { LogFarmEvent } from '../../src/application/use-cases/log-farm-event.js';
@@ -242,5 +245,7 @@ describe('farm-safety (suite trampa PLAN-v1.1.md §8)', () => {
 
   // Dependen de SanitaryPlanProvider + remind_from_plan (Corte 4).
   it.todo('4. Recordatorio sanitario sin plan validado → rehúsa');
-  it.todo('5. "vacuné al lote 7" con plan validado → registra SanitaryTaskDone sin consejo adicional');
+  it.todo(
+    '5. "vacuné al lote 7" con plan validado → registra SanitaryTaskDone sin consejo adicional',
+  );
 });

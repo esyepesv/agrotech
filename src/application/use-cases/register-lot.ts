@@ -36,6 +36,8 @@ export class RegisterLot {
       { kind: 'register_entity', entity: { entity: 'lot', stage, animalCount } },
       this.pendingTtlSeconds,
     );
-    return { text: `No tengo registrado ese lote. ¿Creo un lote de ${stage} con ${animalCount} animales?` };
+    return {
+      text: `No tengo registrado ese lote. ¿Creo un lote de ${stage} con ${animalCount} animales?`,
+    };
   }
 }

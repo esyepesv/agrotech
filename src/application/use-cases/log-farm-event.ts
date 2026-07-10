@@ -30,8 +30,7 @@ const ESCALATION_MESSAGE =
 
 const REFUSAL_MESSAGE = 'Ese registro está fuera de lo que puedo anotar por ahora.';
 
-const FLAGGED_HINT =
-  ' Lo anoto como dato para tu registro; la dosis la valida tu veterinario.';
+const FLAGGED_HINT = ' Lo anoto como dato para tu registro; la dosis la valida tu veterinario.';
 
 /**
  * Primer paso del flujo de registro conversacional (PLAN-v1.1.md §2/§6):

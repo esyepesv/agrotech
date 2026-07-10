@@ -336,4 +336,56 @@ describe('HandleIncomingMessage', () => {
     expect(h.gateway.sent[0]?.text).toBe(GENERATOR_ANSWER);
     expect(h.eventExtractor.calls).toHaveLength(0);
   });
+
+  // ── Alta de granja para usuario anónimo (Corte 1, tarea 6) ────────────
+
+  it('anónimo + onboarding con nombre → propone crear la granja con ese nombre', async () => {
+    const h = buildHarness();
+    const text = 'quiero registrar mi granja Villa Clara';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+
+    await h.handler.handle(textMessage(text), h.gateway);
+
+    expect(h.gateway.sent[0]?.text).toBe(
+      '¿Creo tu granja con el nombre "Villa Clara"? Di sí para confirmar.',
+    );
+    expect(await h.pendingEventStore.hasPending(hashUserId('user-1'))).toBe(true);
+  });
+
+  it('anónimo + "sí" tras proponer la granja → crea granja y operario (queda registrado)', async () => {
+    const h = buildHarness();
+    const text = 'quiero registrar mi granja Villa Clara';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+    await h.handler.handle(textMessage(text), h.gateway);
+
+    await h.handler.handle(textMessage('sí'), h.gateway);
+
+    expect(h.gateway.sent[1]?.text).toContain('creé tu granja "Villa Clara"');
+    const registered = await h.farmRepository.findOperatorByHash(hashUserId('user-1'));
+    expect(registered).not.toBeNull();
+    expect(registered?.farm.name).toBe('Villa Clara');
+    expect(registered?.operator.role).toBe('admin');
+  });
+
+  it('anónimo + "no" tras proponer la granja → descarta y no crea nada', async () => {
+    const h = buildHarness();
+    const text = 'quiero registrar mi granja Villa Clara';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+    await h.handler.handle(textMessage(text), h.gateway);
+
+    await h.handler.handle(textMessage('no'), h.gateway);
+
+    expect(h.gateway.sent[1]?.text).toBe('Listo, lo descarté. No registré nada.');
+    expect(await h.farmRepository.findOperatorByHash(hashUserId('user-1'))).toBeNull();
+  });
+
+  it('anónimo + onboarding sin nombre (solo frase de intención) → pregunta el nombre', async () => {
+    const h = buildHarness();
+    const text = 'quiero registrarme';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+
+    await h.handler.handle(textMessage(text), h.gateway);
+
+    expect(h.gateway.sent[0]?.text).toBe('¿Cómo se llama tu granja?');
+  });
 });

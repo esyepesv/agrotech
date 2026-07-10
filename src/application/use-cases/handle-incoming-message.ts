@@ -78,22 +78,24 @@ export class HandleIncomingMessage {
       return;
     }
 
-    const operatorWithFarm = await this.deps.farmRepository.findOperatorByHash(
-      this.deps.hashUserId(message.channelUserId),
-    );
-    const hasPending = operatorWithFarm
-      ? await this.deps.pendingEventStore.hasPending(operatorWithFarm.operator.id)
-      : false;
+    const userHash = this.deps.hashUserId(message.channelUserId);
+    const operatorWithFarm = await this.deps.farmRepository.findOperatorByHash(userHash);
+    // El pending de un operario vive bajo su OperatorId; el de un usuario
+    // aún no registrado (alta de granja en curso), bajo el hash del canal.
+    const pendingKey = operatorWithFarm ? operatorWithFarm.operator.id : userHash;
+    const hasPending = await this.deps.pendingEventStore.hasPending(pendingKey);
 
     // Atajo determinista ANTES del clasificador (PLAN-v1.1.md §2): un "sí"
     // o "no" corto con pending activo no necesita pasar por el LLM.
     const shortReply = parseShortReply(resolved.question);
-    if (shortReply !== undefined && operatorWithFarm && hasPending) {
-      const reply = await this.deps.confirmFarmEvent.handle(
-        shortReply,
-        operatorWithFarm.operator,
-        operatorWithFarm.farm,
-      );
+    if (shortReply !== undefined && hasPending) {
+      const reply = operatorWithFarm
+        ? await this.deps.confirmFarmEvent.handle(
+            shortReply,
+            operatorWithFarm.operator,
+            operatorWithFarm.farm,
+          )
+        : await this.deps.confirmFarmEvent.handleAnonymous(shortReply, userHash);
       await this.deliverReply(message, gateway, resolved, reply, startedAt);
       return;
     }
@@ -149,23 +151,24 @@ export class HandleIncomingMessage {
         return;
       }
       case 'onboarding': {
-        const reply = await this.deps.registerFarm.handle(
-          this.deps.hashUserId(message.channelUserId),
-          resolved.question,
-        );
+        const reply = await this.deps.registerFarm.handle(userHash, resolved.question);
         await this.deliverReply(message, gateway, resolved, reply, startedAt);
         return;
       }
       case 'confirm':
       case 'cancel': {
-        const reply: FarmReply =
-          operatorWithFarm && hasPending
-            ? await this.deps.confirmFarmEvent.handle(
-                intent.kind,
-                operatorWithFarm.operator,
-                operatorWithFarm.farm,
-              )
-            : { text: NO_PENDING_MESSAGE };
+        let reply: FarmReply;
+        if (!hasPending) {
+          reply = { text: NO_PENDING_MESSAGE };
+        } else if (operatorWithFarm) {
+          reply = await this.deps.confirmFarmEvent.handle(
+            intent.kind,
+            operatorWithFarm.operator,
+            operatorWithFarm.farm,
+          );
+        } else {
+          reply = await this.deps.confirmFarmEvent.handleAnonymous(intent.kind, userHash);
+        }
         await this.deliverReply(message, gateway, resolved, reply, startedAt);
         return;
       }

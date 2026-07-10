@@ -5,8 +5,7 @@ import type { PlanTask } from './plan-task.js';
 // específico de esa granja. Unión discriminada (y no 'standard' | FarmId,
 // que colapsaría a string) para que el chequeo de override sea tipado.
 export type PlanScope =
-  | { readonly kind: 'standard' }
-  | { readonly kind: 'farm'; readonly farmId: FarmId };
+  { readonly kind: 'standard' } | { readonly kind: 'farm'; readonly farmId: FarmId };
 
 export const STANDARD_PLAN_SCOPE: PlanScope = { kind: 'standard' };
 
