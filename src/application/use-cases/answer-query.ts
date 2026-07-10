@@ -64,6 +64,17 @@ const STT_FAILED_MESSAGE =
 const UNTRANSCRIBED_PLACEHOLDER = '[voz no transcrita]';
 
 /**
+ * Pregunta ya resuelta (texto plano + locale), lista para el pipeline de
+ * respuesta. La produce resolveQuestion() o, en v1.1, el orquestador
+ * HandleIncomingMessage cuando ya transcribió el audio para clasificar la
+ * intención (evita una segunda pasada por Whisper).
+ */
+export interface ResolvedQuestion {
+  readonly question: string;
+  readonly locale: Locale;
+}
+
+/**
  * Orquesta el flujo de la sección 5: canal → transcripción → guardrails →
  * RAG → generación → síntesis → respuesta. Regla de formato: input voz →
  * respuesta voz (con fallback a texto si TTS falla); input texto → texto.
@@ -90,6 +101,30 @@ export class AnswerQuery {
       return;
     }
 
+    await this.respondResolved(message, gateway, resolved, startedAt);
+  }
+
+  /**
+   * Variante para el orquestador de v1.1 (HandleIncomingMessage): recibe la
+   * pregunta ya transcrita/normalizada y salta directo al pipeline de
+   * respuesta. handle() delega aquí; el comportamiento de v1 no cambia.
+   */
+  async handleResolved(
+    message: IncomingMessage,
+    gateway: ChannelGateway,
+    resolved: ResolvedQuestion,
+  ): Promise<void> {
+    const startedAt = Date.now();
+    void gateway.indicateTyping(message);
+    await this.respondResolved(message, gateway, resolved, startedAt);
+  }
+
+  private async respondResolved(
+    message: IncomingMessage,
+    gateway: ChannelGateway,
+    resolved: ResolvedQuestion,
+    startedAt: number,
+  ): Promise<void> {
     const { question, locale } = resolved;
 
     // Saludos/agradecimientos no tienen contexto en el corpus: se responden
