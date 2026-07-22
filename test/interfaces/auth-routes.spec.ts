@@ -4,6 +4,7 @@ import type { RegistrationHttpDeps } from '../../src/interfaces/http/register-ro
 import { registerAuthRoutes } from '../../src/interfaces/http/auth-routes.js';
 import { RegisterFarmAndUser } from '../../src/application/use-cases/register-farm-and-user.js';
 import { VerifyAccountDestination } from '../../src/application/use-cases/verify-account-destination.js';
+import { LoginWithOtp } from '../../src/application/use-cases/login-with-otp.js';
 import { FakeClock } from '../application/fakes/fake-clock.js';
 import { FakeFarmRepository } from '../application/fakes/fake-farm-repository.js';
 import { FakeOtpSender } from '../application/fakes/fake-otp-sender.js';
@@ -55,17 +56,38 @@ function buildHarness() {
     hashUserId,
     clock,
   });
-  const app = Fastify();
-  registerAuthRoutes(app, { registration, verifyAccountDestination });
-
-  farmRepository.usersById.set('u1', {
-    id: 'u1',
-    identificationType: 'CC',
-    identificationNumber: '1032456789',
-    phoneHash: hashUserId('+573001234567'),
-    email: 'juan@finca.co',
-    createdAt: clock.now(),
+  const loginWithOtp = new LoginWithOtp({
+    farmRepository,
+    otpStore,
+    sessionIssuer,
+    sessionTtlSeconds: 604800,
   });
+  const app = Fastify();
+  registerAuthRoutes(app, { registration, verifyAccountDestination, loginWithOtp });
+
+  farmRepository.seedRegistration(
+    {
+      id: 'u1',
+      identificationType: 'CC',
+      identificationNumber: '1032456789',
+      phoneHash: hashUserId('+573001234567'),
+      email: 'juan@finca.co',
+      createdAt: clock.now(),
+    },
+    {
+      id: 'farm1',
+      name: 'La Esperanza',
+      config: { metaPartosPorAno: 2.5, region: 'CO' },
+      createdAt: clock.now(),
+    },
+    {
+      id: 'op1',
+      userId: 'u1',
+      farmId: 'farm1',
+      role: 'administrador_dueno',
+      status: 'activo',
+    },
+  );
   const token = sessionIssuer.issue(
     { userId: 'u1', operatorId: 'op1', farmId: 'farm1', role: 'dueño' },
     604800,
@@ -119,5 +141,23 @@ describe('registerAuthRoutes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json<VerificationBody>()).toEqual({ verified: true, destinationKind: 'email' });
     expect(harness.farmRepository.lastAttach?.emailVerifiedAt).toBeInstanceOf(Date);
+  });
+
+  it('mantiene una respuesta uniforme al buscar destinos de login', async () => {
+    const existing = await harness.app.inject({
+      method: 'POST',
+      url: '/auth/destinations',
+      payload: { identifier: 'juan@finca.co' },
+    });
+    const missing = await harness.app.inject({
+      method: 'POST',
+      url: '/auth/destinations',
+      payload: { identifier: 'nadie@finca.co' },
+    });
+
+    expect(existing.statusCode).toBe(200);
+    expect(missing.statusCode).toBe(200);
+    expect(existing.json<{ destinations: unknown[] }>().destinations).toHaveLength(1);
+    expect(missing.json<{ destinations: unknown[] }>().destinations).toHaveLength(1);
   });
 });

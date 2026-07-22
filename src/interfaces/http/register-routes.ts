@@ -206,10 +206,21 @@ export async function requestOtpResponse(
   limiter: OtpRateLimiter,
   input: RequestOtpInput,
 ): Promise<HttpResponse> {
-  const { destination, destinationKind, transport } = input;
-
   // Cuota horaria por destino + cooldown de reenvío (spec 001 §4.2/§5).
-  const decision = limiter.check(destination);
+  const limited = otpRateLimitResponse(limiter, input.destination);
+  if (limited !== undefined) {
+    return limited;
+  }
+
+  return sendOtpResponse(deps, input);
+}
+
+/** Aplica la cuota común; login usa una llave derivada del identificador. */
+export function otpRateLimitResponse(
+  limiter: OtpRateLimiter,
+  key: string,
+): HttpResponse | undefined {
+  const decision = limiter.check(key);
   if (!decision.allowed) {
     return errorResponse(
       429,
@@ -220,7 +231,15 @@ export async function requestOtpResponse(
         : undefined,
     );
   }
+  return undefined;
+}
 
+/** Genera, persiste y envía un OTP una vez que ya pasó el rate limit. */
+export async function sendOtpResponse(
+  deps: RegistrationHttpDeps,
+  input: RequestOtpInput,
+): Promise<HttpResponse> {
+  const { destination, destinationKind, transport } = input;
   if (!deps.otpSender.availableTransports().includes(transport)) {
     return errorResponse(
       503,

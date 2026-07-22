@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHandlers, getRegistrationConfig } from '../../src/interfaces/serverless/runtime.js';
 import { applyCors } from '../register/_cors.js';
-import { authorizationHeader } from './_authorization.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const config = getRegistrationConfig();
@@ -12,11 +11,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     res.status(405).json({ error: { code: 'method_not_allowed', message: 'Método no soportado.' } });
     return;
   }
-
-  const response = await getAuthHandlers().accountRequestOtp({
-    body: req.body,
-    authorization: authorizationHeader(req.headers),
-  });
+  const response = await getAuthHandlers().authRequestOtp({ body: req.body });
   if (response.headers !== undefined) {
     for (const [key, value] of Object.entries(response.headers)) {
       res.setHeader(key, value);

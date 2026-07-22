@@ -175,6 +175,19 @@ export class SupabaseFarmRepository implements FarmRepository {
     return toAppUser(data as AppUserRow);
   }
 
+  async findUserByEmail(email: string): Promise<AppUser | null> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const { data, error } = await this.client
+      .from(APP_USER_TABLE)
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+    if (error !== null || data === null) {
+      return null;
+    }
+    return toAppUser(data as AppUserRow);
+  }
+
   async findUserByHash(channelUserHash: string): Promise<AppUser | null> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { data, error } = await this.client

@@ -26,6 +26,7 @@ export class FakeFarmRepository implements FarmRepository {
 
   readonly usersById = new Map<AppUserId, AppUser>();
   readonly usersByIdentification = new Map<string, AppUserId>();
+  readonly usersByEmail = new Map<string, AppUserId>();
   readonly usersByHash = new Map<string, AppUserId>();
   // Identidad de chat probada por Telegram (hashed-zooming-flame.md, Tarea
   // 1): espacio separado de usersByHash (channel_user_hash), igual que en
@@ -110,6 +111,11 @@ export class FakeFarmRepository implements FarmRepository {
     const userId = this.usersByIdentification.get(
       identificationKey(identificationType, identificationNumber),
     );
+    return userId !== undefined ? (this.usersById.get(userId) ?? null) : null;
+  }
+
+  async findUserByEmail(email: string): Promise<AppUser | null> {
+    const userId = this.usersByEmail.get(email);
     return userId !== undefined ? (this.usersById.get(userId) ?? null) : null;
   }
 
@@ -274,6 +280,7 @@ export class FakeFarmRepository implements FarmRepository {
       identificationKey(user.identificationType, user.identificationNumber),
       user.id,
     );
+    this.usersByEmail.set(user.email, user.id);
     if (user.channelUserHash !== undefined) {
       this.usersByHash.set(user.channelUserHash, user.id);
     }

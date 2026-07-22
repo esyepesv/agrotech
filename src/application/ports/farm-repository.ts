@@ -44,6 +44,7 @@ export interface FarmRepository {
     identificationType: IdentificationType,
     identificationNumber: string,
   ): Promise<AppUser | null>;
+  findUserByEmail(email: string): Promise<AppUser | null>;
   findUserByHash(channelUserHash: string): Promise<AppUser | null>;
   // Por id (hashed-zooming-flame.md, Tarea 5): VerifyAccountDestination lo
   // usa para leer phoneHash/email de la cuenta del token y comparar contra

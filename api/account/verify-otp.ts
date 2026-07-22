@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHandlers, getRegistrationConfig } from '../../src/interfaces/serverless/runtime.js';
 import { applyCors } from '../register/_cors.js';
+import { authorizationHeader } from './_authorization.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const config = getRegistrationConfig();
@@ -12,10 +13,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  const authorization = req.headers.authorization;
   const response = await getAuthHandlers().accountVerifyOtp({
     body: req.body,
-    authorization: Array.isArray(authorization) ? authorization[0] : authorization,
+    authorization: authorizationHeader(req.headers),
   });
   if (response.headers !== undefined) {
     for (const [key, value] of Object.entries(response.headers)) {
