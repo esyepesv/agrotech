@@ -1,6 +1,6 @@
 import type { FarmContext } from '../../domain/farm/farm-context.js';
 import { ANONYMOUS_FARM_CONTEXT } from '../../domain/farm/farm-context.js';
-import { normalizeColombianMobileToE164 } from '../../domain/farm/registration.js';
+import { channelIdentityValue } from '../../domain/message/channel-identity.js';
 import { INTENT_CONFIDENCE_THRESHOLD } from '../../domain/intent/intent.js';
 import { parseShortReply } from '../../domain/intent/short-reply.js';
 import type {
@@ -83,7 +83,9 @@ export class HandleIncomingMessage {
       return;
     }
 
-    const userHash = this.deps.hashUserId(message.channelUserId);
+    const userHash = this.deps.hashUserId(
+      channelIdentityValue(message.channel, message.channelUserId),
+    );
     const operatorWithFarm = await this.deps.farmRepository.findOperatorByHash(userHash);
     // El pending de un operario vive bajo su OperatorId; el de un usuario
     // aún no registrado (alta de granja en curso), bajo el hash del canal.
@@ -330,7 +332,12 @@ export class HandleIncomingMessage {
    */
   private detectPhone(message: IncomingMessage): string | undefined {
     if (message.channel === 'whatsapp') {
-      return normalizeColombianMobileToE164(message.channelUserId) ?? undefined;
+      // channelIdentityValue normaliza a E.164 si es un celular colombiano
+      // reconocible; si no, devuelve el id crudo, que nunca empieza por "+"
+      // (un E.164 colombiano siempre lo hace) — así el "no reconocible" del
+      // helper compartido se traduce aquí en "no lo detectamos como celular".
+      const normalized = channelIdentityValue('whatsapp', message.channelUserId);
+      return normalized.startsWith('+') ? normalized : undefined;
     }
     return message.contactPhone;
   }

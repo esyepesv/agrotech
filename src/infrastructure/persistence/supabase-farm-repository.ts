@@ -59,7 +59,9 @@ interface AppUserRow {
   readonly id: string;
   readonly identification_type: string;
   readonly identification_number: string;
+  readonly phone_hash: string | null;
   readonly channel_user_hash: string | null;
+  readonly telegram_user_hash: string | null;
   readonly phone_verified_at: string | null;
   readonly email_verified_at: string | null;
   readonly email: string | null;
@@ -94,12 +96,15 @@ export class SupabaseFarmRepository implements FarmRepository {
   constructor(private readonly client: SupabaseClient) {}
 
   async findOperatorByHash(channelUserHash: string): Promise<OperatorWithFarm | null> {
-    // Camino v1.2: app_user.channel_user_hash → operator activo de esa persona.
+    // Camino v1.2: app_user.channel_user_hash / telegram_user_hash → operator
+    // activo de esa persona. Un único método sirve a los dos canales
+    // (hashed-zooming-flame.md, Tarea 1) sin cambiar la firma ni tocar a sus
+    // llamadores de v1.1.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { data: userData } = await this.client
       .from(APP_USER_TABLE)
       .select('*')
-      .eq('channel_user_hash', channelUserHash)
+      .or(`channel_user_hash.eq.${channelUserHash},telegram_user_hash.eq.${channelUserHash}`)
       .maybeSingle();
     if (userData !== null) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -183,23 +188,51 @@ export class SupabaseFarmRepository implements FarmRepository {
     return toAppUser(data as AppUserRow);
   }
 
-  async attachVerifiedPhone(
-    userId: AppUserId,
-    channelUserHash: string,
-    verifiedAt: Date,
-  ): Promise<Result<AppUser, PersistenceError>> {
+  async findUserByPhoneHash(phoneHash: string): Promise<AppUser | null> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { data, error } = await this.client
       .from(APP_USER_TABLE)
-      .update({ channel_user_hash: channelUserHash, phone_verified_at: verifiedAt.toISOString() })
+      .select('*')
+      .eq('phone_hash', phoneHash)
+      .maybeSingle();
+    if (error !== null || data === null) {
+      return null;
+    }
+    return toAppUser(data as AppUserRow);
+  }
+
+  async attachChatIdentity(
+    userId: AppUserId,
+    params: {
+      readonly channelUserHash?: string;
+      readonly telegramUserHash?: string;
+      readonly phoneVerifiedAt?: Date;
+      readonly emailVerifiedAt?: Date;
+    },
+  ): Promise<Result<AppUser, PersistenceError>> {
+    const update: Record<string, string> = {};
+    if (params.channelUserHash !== undefined) {
+      update.channel_user_hash = params.channelUserHash;
+    }
+    if (params.telegramUserHash !== undefined) {
+      update.telegram_user_hash = params.telegramUserHash;
+    }
+    if (params.phoneVerifiedAt !== undefined) {
+      update.phone_verified_at = params.phoneVerifiedAt.toISOString();
+    }
+    if (params.emailVerifiedAt !== undefined) {
+      update.email_verified_at = params.emailVerifiedAt.toISOString();
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const { data, error } = await this.client
+      .from(APP_USER_TABLE)
+      .update(update)
       .eq('id', userId)
       .select('*')
       .maybeSingle();
     if (error !== null || data === null) {
       return err(
-        persistenceError(
-          `fallo al completar celular verificado: ${error?.message ?? 'no encontrado'}`,
-        ),
+        persistenceError(`fallo al ligar identidad de chat: ${error?.message ?? 'no encontrado'}`),
       );
     }
     return ok(toAppUser(data as AppUserRow));
@@ -521,7 +554,11 @@ function toAppUser(row: AppUserRow): AppUser {
     id: row.id,
     identificationType: toIdentificationType(row.identification_type),
     identificationNumber: row.identification_number,
+    // row.phone_hash ?? '' cubre filas de antes de la migración 0006
+    // (columna aún no aplicada/poblada); AppUser.phoneHash es obligatorio.
+    phoneHash: row.phone_hash ?? '',
     channelUserHash: row.channel_user_hash ?? undefined,
+    telegramUserHash: row.telegram_user_hash ?? undefined,
     phoneVerifiedAt: row.phone_verified_at ? new Date(row.phone_verified_at) : undefined,
     emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : undefined,
     email: row.email ?? undefined,
@@ -535,7 +572,9 @@ function fromAppUser(user: AppUser): AppUserRow {
     id: user.id,
     identification_type: user.identificationType,
     identification_number: user.identificationNumber,
+    phone_hash: user.phoneHash,
     channel_user_hash: user.channelUserHash ?? null,
+    telegram_user_hash: user.telegramUserHash ?? null,
     phone_verified_at: user.phoneVerifiedAt?.toISOString() ?? null,
     email_verified_at: user.emailVerifiedAt?.toISOString() ?? null,
     email: user.email ?? null,

@@ -114,7 +114,9 @@ export class RegisterFarmAndUser {
    * verificado, se completa su identidad de chat ahora — spec 001 §4.3:
    * "Usuario que solo verificó el correo ... tras lo cual queda vinculado a
    * su cuenta existente". Nunca se sobreescribe un hash ya atado (ese caso
-   * ya fue rechazado como duplicate_identification arriba).
+   * ya fue rechazado como duplicate_identification arriba). Antes lo hacía
+   * attachVerifiedPhone; ahora attachChatIdentity (hashed-zooming-flame.md,
+   * Tarea 1), mismo propósito con las columnas separadas de AppUser.
    */
   private async resolveExistingUser(
     existingUser: AppUser | null,
@@ -129,11 +131,10 @@ export class RegisterFarmAndUser {
     ) {
       return ok(existingUser);
     }
-    const attached = await this.deps.farmRepository.attachVerifiedPhone(
-      existingUser.id,
+    const attached = await this.deps.farmRepository.attachChatIdentity(existingUser.id, {
       channelUserHash,
-      now,
-    );
+      phoneVerifiedAt: now,
+    });
     if (!attached.ok) {
       return err({ kind: 'persistence', message: attached.error.message });
     }
@@ -281,17 +282,23 @@ export class RegisterFarmAndUser {
   }
 
   /**
-   * Regla única de spec 001 §4.3: channel_user_hash SOLO se escribe si el
-   * celular quedó verificado (user.phoneVerified); si no, queda nulo (la
-   * persona se registró verificando solo el correo, o dio un celular
-   * distinto al detectado por el canal sin completar el OTP) y se completa
-   * después vía resolveExistingUser/attachVerifiedPhone.
+   * phoneHash SIEMPRE se escribe (de qué celular dijo ser dueño); es la
+   * regla NUEVA (hashed-zooming-flame.md, Tarea 1) que hace posible
+   * reconocer luego el emparejamiento de invitaciones sin exigir OTP.
+   *
+   * channelUserHash sigue la regla única de spec 001 §4.3, que NO cambia de
+   * lugar: SOLO se escribe si el celular quedó verificado
+   * (user.phoneVerified); si no, queda nulo (la persona se registró
+   * verificando solo el correo, o dio un celular distinto al detectado por
+   * el canal sin completar el OTP) y se completa después vía
+   * resolveExistingUser/attachChatIdentity.
    */
   private buildNewAppUser(user: NormalizedUserInput, channelUserHash: string, now: Date): AppUser {
     return {
       id: this.deps.idGenerator(),
       identificationType: user.identificationType,
       identificationNumber: user.identificationNumber,
+      phoneHash: channelUserHash,
       channelUserHash: user.phoneVerified ? channelUserHash : undefined,
       phoneVerifiedAt: user.phoneVerified ? now : undefined,
       emailVerifiedAt: user.emailVerified ? now : undefined,

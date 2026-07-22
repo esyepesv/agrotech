@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Farm } from '../../src/domain/farm/farm.js';
 import type { FarmEventDraft, FeedDelivery } from '../../src/domain/farm/farm-event.js';
 import type { Operator } from '../../src/domain/farm/operator.js';
+import { channelIdentityValue } from '../../src/domain/message/channel-identity.js';
 import type { IncomingMessage } from '../../src/domain/message/incoming-message.js';
 import { AnswerQuery } from '../../src/application/use-cases/answer-query.js';
 import { ConfirmFarmEvent } from '../../src/application/use-cases/confirm-farm-event.js';
@@ -36,11 +37,22 @@ const MIN_RELEVANCE_SCORE = 0.35;
 const GENERATOR_ANSWER = 'Aliméntala a voluntad durante la lactancia, repartido en 2 o 3 comidas.';
 const HASH_PREFIX = 'hash-';
 const FARM_ID = 'farm-1';
-const OPERATOR_HASH = `${HASH_PREFIX}user-1`;
 
 function hashUserId(channelUserId: string): string {
   return `${HASH_PREFIX}${channelUserId}`;
 }
+
+// Los fixtures por defecto de este archivo usan channel: 'telegram' — el
+// hash de identidad de chat que calcula HandleIncomingMessage pasa SIEMPRE
+// por channelIdentityValue (Tarea 1: normalización antes de hashear), que
+// para Telegram antepone 'tg:' (espacio propio, nunca colisiona con un
+// celular). Este helper reproduce esa misma cadena para que los fixtures de
+// operador/pending queden en el hash que el orquestador realmente usa.
+function chatHash(channel: 'telegram' | 'whatsapp', channelUserId: string): string {
+  return hashUserId(channelIdentityValue(channel, channelUserId));
+}
+
+const OPERATOR_HASH = chatHash('telegram', 'user-1');
 
 function textMessage(text: string, channelUserId = 'user-1'): IncomingMessage {
   return {
@@ -374,7 +386,7 @@ describe('HandleIncomingMessage', () => {
     expect(h.gateway.sent[0]?.text).toBe(
       '¿Eres el dueño/administrador de la finca o trabajas en ella?',
     );
-    expect(await h.pendingEventStore.hasPending(hashUserId('user-1'))).toBe(true);
+    expect(await h.pendingEventStore.hasPending(chatHash('telegram', 'user-1'))).toBe(true);
   });
 
   it('el borrador de registro sobrevive a un "sí" corto (no lo consume ConfirmFarmEvent)', async () => {
@@ -389,8 +401,8 @@ describe('HandleIncomingMessage', () => {
     await h.handler.handle(textMessage('sí'), h.gateway);
 
     expect(h.gateway.sent[1]?.text).not.toBe('Listo, lo descarté. No registré nada.');
-    expect(await h.pendingEventStore.hasPending(hashUserId('user-1'))).toBe(true);
-    expect(await h.farmRepository.findOperatorByHash(hashUserId('user-1'))).toBeNull();
+    expect(await h.pendingEventStore.hasPending(chatHash('telegram', 'user-1'))).toBe(true);
+    expect(await h.farmRepository.findOperatorByHash(chatHash('telegram', 'user-1'))).toBeNull();
   });
 
   it('elegir "Soy dueño" por botón avanza al nombre de la finca', async () => {
@@ -405,6 +417,43 @@ describe('HandleIncomingMessage', () => {
     await h.handler.handle(textMessage(tap), h.gateway);
 
     expect(h.gateway.sent[1]?.text.toLowerCase()).toContain('finca');
-    expect(await h.farmRepository.findOperatorByHash(hashUserId('user-1'))).toBeNull();
+    expect(await h.farmRepository.findOperatorByHash(chatHash('telegram', 'user-1'))).toBeNull();
+  });
+
+  // ── Defecto de identidad de chat (hashed-zooming-flame.md, Tarea 1) ────
+  //
+  // Al registrar se hashea el celular en E.164 ("+573001234567"); al
+  // recibir un mensaje de WhatsApp, el wa_id llega SIN "+" ("573001234567").
+  // Sin normalización, los dos hashes nunca coinciden y nadie es reconocido
+  // tras registrarse. Este test reproduce exactamente ese desajuste.
+
+  it('reconoce por WhatsApp a quien se registró con el celular en E.164 (el wa_id llega sin +)', async () => {
+    const h = buildHarness();
+    const operator: Operator = {
+      id: 'operator-wa',
+      userId: 'user-wa',
+      farmId: FARM_ID,
+      channelUserHash: hashUserId('+573001234567'),
+      role: 'trabajador',
+      status: 'activo',
+    };
+    h.farmRepository.seedOperator(buildFarm(), operator);
+
+    const message = {
+      channel: 'whatsapp' as const,
+      channelUserId: '573001234567',
+      messageId: 'msg-wa-1',
+      type: 'text' as const,
+      text: '¿cuánto me queda de concentrado?',
+      receivedAt: new Date(),
+    };
+    h.intentClassifier.respuestas.set('¿cuánto me queda de concentrado?', {
+      kind: 'query_state',
+      confidence: 0.9,
+    });
+
+    await h.handler.handle(message, h.gateway);
+
+    expect(h.farmRepository.lastLookupHash).toBe(hashUserId('+573001234567'));
   });
 });

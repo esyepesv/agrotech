@@ -27,8 +27,16 @@ export class FakeFarmRepository implements FarmRepository {
   readonly usersById = new Map<AppUserId, AppUser>();
   readonly usersByIdentification = new Map<string, AppUserId>();
   readonly usersByHash = new Map<string, AppUserId>();
+  // Identidad de chat probada por Telegram (hashed-zooming-flame.md, Tarea
+  // 1): espacio separado de usersByHash (channel_user_hash), igual que en
+  // Supabase (columna telegram_user_hash aparte).
+  readonly usersByTelegramHash = new Map<string, AppUserId>();
+  readonly usersByPhoneHash = new Map<string, AppUserId>();
   readonly operatorsById = new Map<OperatorId, Operator>();
   readonly invitationsByPhoneHash = new Map<string, WorkerInvitation>();
+
+  /** Último hash recibido por findOperatorByHash (asserts de test de regresión). */
+  lastLookupHash: string | undefined;
 
   /** Atajo de setup para tests: registra granja + operario de una vez (legacy v1.1). */
   seedOperator(farm: Farm, operator: Operator): void {
@@ -47,13 +55,16 @@ export class FakeFarmRepository implements FarmRepository {
   }
 
   async findOperatorByHash(channelUserHash: string): Promise<OperatorWithFarm | null> {
+    this.lastLookupHash = channelUserHash;
     const legacy = this.operatorsByHash.get(channelUserHash);
     if (legacy) {
       const farm = this.farmsById.get(legacy.farmId);
       return farm ? { operator: legacy, farm } : null;
     }
 
-    const userId = this.usersByHash.get(channelUserHash);
+    // Un único método sirve a los dos canales probados (hashed-zooming-flame.md,
+    // Tarea 1): channel_user_hash (WhatsApp) o telegram_user_hash (Telegram).
+    const userId = this.usersByHash.get(channelUserHash) ?? this.usersByTelegramHash.get(channelUserHash);
     if (userId === undefined) {
       return null;
     }
@@ -97,16 +108,33 @@ export class FakeFarmRepository implements FarmRepository {
     return userId !== undefined ? (this.usersById.get(userId) ?? null) : null;
   }
 
-  async attachVerifiedPhone(
+  async findUserByPhoneHash(phoneHash: string): Promise<AppUser | null> {
+    const userId = this.usersByPhoneHash.get(phoneHash);
+    return userId !== undefined ? (this.usersById.get(userId) ?? null) : null;
+  }
+
+  async attachChatIdentity(
     userId: AppUserId,
-    channelUserHash: string,
-    verifiedAt: Date,
+    params: {
+      readonly channelUserHash?: string;
+      readonly telegramUserHash?: string;
+      readonly phoneVerifiedAt?: Date;
+      readonly emailVerifiedAt?: Date;
+    },
   ): Promise<Result<AppUser, PersistenceError>> {
     const existing = this.usersById.get(userId);
     if (!existing) {
       return err(persistenceError(`usuario no encontrado: ${userId}`));
     }
-    const updated: AppUser = { ...existing, channelUserHash, phoneVerifiedAt: verifiedAt };
+    const updated: AppUser = {
+      ...existing,
+      ...(params.channelUserHash !== undefined ? { channelUserHash: params.channelUserHash } : {}),
+      ...(params.telegramUserHash !== undefined
+        ? { telegramUserHash: params.telegramUserHash }
+        : {}),
+      ...(params.phoneVerifiedAt !== undefined ? { phoneVerifiedAt: params.phoneVerifiedAt } : {}),
+      ...(params.emailVerifiedAt !== undefined ? { emailVerifiedAt: params.emailVerifiedAt } : {}),
+    };
     this.saveUser(updated);
     return ok(updated);
   }
@@ -233,6 +261,12 @@ export class FakeFarmRepository implements FarmRepository {
     );
     if (user.channelUserHash !== undefined) {
       this.usersByHash.set(user.channelUserHash, user.id);
+    }
+    if (user.telegramUserHash !== undefined) {
+      this.usersByTelegramHash.set(user.telegramUserHash, user.id);
+    }
+    if (user.phoneHash.length > 0) {
+      this.usersByPhoneHash.set(user.phoneHash, user.id);
     }
   }
 

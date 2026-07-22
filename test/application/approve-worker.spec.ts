@@ -22,6 +22,7 @@ function buildOwnerUser(): AppUser {
     id: 'user-owner',
     identificationType: 'CC',
     identificationNumber: '1032456789',
+    phoneHash: 'phone-hash-owner',
     channelUserHash: 'hash-owner',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
   };
@@ -42,6 +43,7 @@ function buildWorkerUser(id = 'user-worker', identificationNumber = '900123456')
     id,
     identificationType: 'CC',
     identificationNumber,
+    phoneHash: `phone-hash-${id}`,
     channelUserHash: `hash-${id}`,
     displayName: 'Juan Pérez',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),

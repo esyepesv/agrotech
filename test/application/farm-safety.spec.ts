@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Farm } from '../../src/domain/farm/farm.js';
 import type { FarmEventDraft, MedicationApplication } from '../../src/domain/farm/farm-event.js';
 import type { Operator } from '../../src/domain/farm/operator.js';
+import { channelIdentityValue } from '../../src/domain/message/channel-identity.js';
 import type { IncomingMessage } from '../../src/domain/message/incoming-message.js';
 import {
   ANSWER_QUERY_MESSAGES,
@@ -41,11 +42,15 @@ import { FakeTranscriber } from './fakes/fake-transcriber.js';
 
 const MIN_RELEVANCE_SCORE = 0.35;
 const FARM_ID = 'farm-1';
-const OPERATOR_HASH = 'hash-user-1';
 
 function hashUserId(channelUserId: string): string {
   return `hash-${channelUserId}`;
 }
+
+// El fixture usa channel: 'telegram' — el hash real que calcula
+// HandleIncomingMessage pasa por channelIdentityValue (Tarea 1), que para
+// Telegram antepone 'tg:'. Ver la misma nota en handle-incoming-message.spec.ts.
+const OPERATOR_HASH = hashUserId(channelIdentityValue('telegram', 'user-1'));
 
 function textMessage(text: string): IncomingMessage {
   return {

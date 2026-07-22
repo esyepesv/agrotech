@@ -45,16 +45,24 @@ export interface FarmRepository {
     identificationNumber: string,
   ): Promise<AppUser | null>;
   findUserByHash(channelUserHash: string): Promise<AppUser | null>;
-  // Completa la identidad de chat de una persona que ya existía sin ella
-  // (se registró verificando solo el correo, channel_user_hash nulo) cuando
-  // por fin verifica su celular (spec 001 §4.3, tabla de errores: "Usuario
-  // que solo verificó el correo y luego escribe por WhatsApp"). No está en
-  // la lista original de métodos del spec — extensión aditiva mínima
-  // necesaria para esa regla (ver informe final).
-  attachVerifiedPhone(
+  // De qué celular dijo ser dueño (hashed-zooming-flame.md, Tarea 1): a
+  // diferencia de findUserByHash/findOperatorByHash, NUNCA sirve para
+  // reconocer un chat — solo para el ligado explícito (LinkChatIdentity,
+  // VerifyAccountDestination) cuando el canal SÍ prueba el celular.
+  findUserByPhoneHash(phoneHash: string): Promise<AppUser | null>;
+  // Liga o completa la identidad de chat probada de una persona ya
+  // existente: al verificar el celular por OTP desde la web, al ligar
+  // automáticamente un chat que prueba el número (canal), o al compartir el
+  // contacto en Telegram. Sustituye a attachVerifiedPhone (subsumido: mismo
+  // propósito, ahora con las tres columnas separadas de AppUser).
+  attachChatIdentity(
     userId: AppUserId,
-    channelUserHash: string,
-    verifiedAt: Date,
+    params: {
+      readonly channelUserHash?: string;
+      readonly telegramUserHash?: string;
+      readonly phoneVerifiedAt?: Date;
+      readonly emailVerifiedAt?: Date;
+    },
   ): Promise<Result<AppUser, PersistenceError>>;
   // No estaba en la lista original de métodos del spec, pero es
   // indispensable para detectar 'farm_not_found' al registrar un trabajador
