@@ -561,7 +561,9 @@ function toAppUser(row: AppUserRow): AppUser {
     telegramUserHash: row.telegram_user_hash ?? undefined,
     phoneVerifiedAt: row.phone_verified_at ? new Date(row.phone_verified_at) : undefined,
     emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : undefined,
-    email: row.email ?? undefined,
+    // row.email ?? '' cubre filas de antes de la migración 0006 (columna
+    // aún no NOT NULL/poblada); AppUser.email es obligatorio.
+    email: row.email ?? '',
     displayName: row.display_name ?? undefined,
     createdAt: new Date(row.created_at),
   };

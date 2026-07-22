@@ -67,6 +67,7 @@ function userInputBody(overrides: Record<string, unknown> = {}) {
     identificationType: 'CC',
     identificationNumber: '1032456789',
     phone: '3001234567',
+    email: 'dueno@ejemplo.com',
     ...overrides,
   };
 }

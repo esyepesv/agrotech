@@ -31,7 +31,7 @@ export interface AppUser {
   readonly telegramUserHash?: string;
   readonly phoneVerifiedAt?: Date;
   readonly emailVerifiedAt?: Date;
-  readonly email?: string;
+  readonly email: string;
   readonly displayName?: string;
   readonly createdAt: Date;
 }

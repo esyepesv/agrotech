@@ -339,7 +339,10 @@ async function handleRegister(deps: RegistrationHttpDeps, rawBody: unknown): Pro
     identificationType: body.user.identificationType,
     identificationNumber: body.user.identificationNumber,
     phone: body.user.phone,
-    email: body.user.email,
+    // body.user.email sigue opcional en el schema HTTP (Tarea 4/8, fuera de
+    // alcance aquí); '' hace que validateUserInput sea quien rechace con el
+    // mensaje de dominio "Necesito tu correo electrónico." si falta.
+    email: body.user.email ?? '',
     displayName: body.user.displayName,
     channel: WEB_CHANNEL_PLACEHOLDER,
     phoneVerified: false,

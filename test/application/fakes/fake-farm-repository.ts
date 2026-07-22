@@ -64,7 +64,8 @@ export class FakeFarmRepository implements FarmRepository {
 
     // Un único método sirve a los dos canales probados (hashed-zooming-flame.md,
     // Tarea 1): channel_user_hash (WhatsApp) o telegram_user_hash (Telegram).
-    const userId = this.usersByHash.get(channelUserHash) ?? this.usersByTelegramHash.get(channelUserHash);
+    const userId =
+      this.usersByHash.get(channelUserHash) ?? this.usersByTelegramHash.get(channelUserHash);
     if (userId === undefined) {
       return null;
     }

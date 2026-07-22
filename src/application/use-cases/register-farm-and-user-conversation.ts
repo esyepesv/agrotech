@@ -432,6 +432,10 @@ function buildRegisterInput(
         identificationNumber: partial.idNumber,
         phone: partial.phone,
         channel: ctx.channel,
+        // Tarea 3 (pendiente) le pedirá correo también al trabajador; hasta
+        // entonces, si falta, validateUserInput lo rechaza aguas abajo con
+        // el mensaje "Necesito tu correo electrónico." — no se silencia.
+        email: partial.email ?? '',
         phoneVerified: partial.phoneVerified ?? false,
         emailVerified: false,
       },
@@ -461,7 +465,7 @@ function buildRegisterInput(
       identificationNumber: partial.idNumber,
       phone: partial.phone,
       channel: ctx.channel,
-      email: partial.email,
+      email: partial.email ?? '',
       phoneVerified: partial.phoneVerified ?? false,
       // El chat nunca verifica el correo por OTP (spec 001 §4.1.3): solo se
       // captura. Verificarlo de verdad es exclusivo del flujo web (§4.2).

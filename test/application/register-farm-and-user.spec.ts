@@ -9,6 +9,7 @@ import {
   isValidColombianMobile,
   isValidIdentificationNumber,
   normalizeColombianMobileToE164,
+  validateUserInput,
 } from '../../src/domain/farm/registration.js';
 import { RegisterFarmAndUser } from '../../src/application/use-cases/register-farm-and-user.js';
 import type { RegisterFarmAndUserDeps } from '../../src/application/use-cases/register-farm-and-user.js';
@@ -21,6 +22,7 @@ function userInput(overrides: Partial<UserInput> = {}): UserInput {
     identificationNumber: '1032456789',
     phone: '3001234567',
     channel: 'whatsapp',
+    email: 'dueno@example.com',
     phoneVerified: true,
     emailVerified: false,
     ...overrides,
@@ -365,5 +367,27 @@ describe('validación pura de registro (sin mocks)', () => {
     expect(isValidIdentificationNumber('1032456789')).toBe(true);
     expect(isValidIdentificationNumber('   ')).toBe(false);
     expect(isValidIdentificationNumber('')).toBe(false);
+  });
+
+  it('rechaza el registro sin correo', () => {
+    const result = validateUserInput(userInput({ email: '' }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toEqual({
+        kind: 'validation',
+        field: 'email',
+        message: 'Necesito tu correo electrónico.',
+      });
+    }
+  });
+
+  it('rechaza un correo sin arroba', () => {
+    expect(validateUserInput(userInput({ email: 'juan.correo.com' })).ok).toBe(false);
+  });
+
+  it('normaliza el correo a minúsculas sin espacios', () => {
+    const result = validateUserInput(userInput({ email: '  Juan@Finca.CO ' }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.email).toBe('juan@finca.co');
   });
 });

@@ -24,6 +24,7 @@ function buildOwnerUser(): AppUser {
     identificationNumber: '1032456789',
     phoneHash: 'phone-hash-owner',
     channelUserHash: 'hash-owner',
+    email: 'owner@example.com',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
   };
 }
@@ -45,6 +46,7 @@ function buildWorkerUser(id = 'user-worker', identificationNumber = '900123456')
     identificationNumber,
     phoneHash: `phone-hash-${id}`,
     channelUserHash: `hash-${id}`,
+    email: `${id}@example.com`,
     displayName: 'Juan Pérez',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
   };

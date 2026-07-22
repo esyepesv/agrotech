@@ -1,5 +1,6 @@
 import type { IdentificationType } from './app-user.js';
 import type { FarmId } from './farm.js';
+import { normalizeDestination } from '../otp/otp-destination.js';
 import { err, ok, type Result } from '../shared/result.js';
 
 export type Channel = 'whatsapp' | 'telegram';
@@ -9,7 +10,7 @@ export interface UserInput {
   readonly identificationNumber: string;
   readonly phone: string;
   readonly channel: Channel;
-  readonly email?: string;
+  readonly email: string;
   readonly displayName?: string;
   // Quién probó la posesión del celular/correo, y no el texto del campo
   // (spec 001 §4.1.2/§4.3): el adaptador decide esto ANTES de llamar al
@@ -119,7 +120,16 @@ export function isValidIdentificationNumber(value: string): boolean {
   return value.trim().length > 0;
 }
 
-export type NormalizedUserInput = UserInput & { readonly phone: string };
+// Deliberadamente laxo: un correo solo se comprueba de verdad enviándole
+// algo, y eso lo hace la verificación por OTP (que es opcional). Esto solo
+// atrapa dedazos evidentes.
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(value: string): boolean {
+  return EMAIL_SHAPE.test(value);
+}
+
+export type NormalizedUserInput = UserInput & { readonly phone: string; readonly email: string };
 export type NormalizedWorkerInvitationInput = WorkerInvitationInput & { readonly phone: string };
 
 export function validateUserInput(user: UserInput): Result<NormalizedUserInput, RegistrationError> {
@@ -132,7 +142,14 @@ export function validateUserInput(user: UserInput): Result<NormalizedUserInput, 
       validationError('phone', 'El celular debe ser colombiano, de 10 dígitos y empezar por 3.'),
     );
   }
-  return ok({ ...user, phone: normalizedPhone });
+  const normalizedEmail = normalizeDestination(user.email ?? '', 'email');
+  if (normalizedEmail.length === 0) {
+    return err(validationError('email', 'Necesito tu correo electrónico.'));
+  }
+  if (!isValidEmail(normalizedEmail)) {
+    return err(validationError('email', 'Ese correo no parece válido. Revísalo, por favor.'));
+  }
+  return ok({ ...user, phone: normalizedPhone, email: normalizedEmail });
 }
 
 export function validateFarmInput(farm: FarmInput): Result<FarmInput, RegistrationError> {
