@@ -3,7 +3,9 @@ import type { OperatorRole } from './operator.js';
 import type { Channel } from '../message/incoming-message.js';
 import type { InteractiveLayout, ReplyOption } from '../message/reply-option.js';
 import { matchOption, optionId, parseOptionId } from '../message/reply-option.js';
+import { normalizeDestination } from '../otp/otp-destination.js';
 import { err, ok, type Result } from '../shared/result.js';
+import { isValidEmail } from './registration.js';
 
 // ── Tipos del estado conversacional ───────────────────────────────────────
 
@@ -27,7 +29,6 @@ export type RegistrationStep =
   | 'idNumber'
   | 'idNumberConfirm'
   | 'email'
-  | 'emailWrite'
   | 'workerFarmSearch'
   | 'workerFarmPick'
   | 'confirm'
@@ -72,7 +73,6 @@ export interface RegistrationPartial {
   readonly idType?: IdentificationType;
   readonly idNumber?: string;
   readonly email?: string;
-  readonly emailChoice?: 'write' | 'skip';
 
   readonly workerFarmQuery?: string;
   readonly workerFarmResults?: readonly FarmSearchOption[];
@@ -145,12 +145,6 @@ const ID_TYPE_OPTIONS: readonly ReplyOption[] = [
   { id: optionId('idType', 'PA'), label: 'Pasaporte' },
 ];
 
-const EMAIL_OPTIONS: readonly ReplyOption[] = [
-  { id: optionId('email', 'write'), label: 'Escribirlo' },
-  { id: optionId('email', 'none'), label: 'No tengo' },
-  { id: optionId('email', 'later'), label: 'Después' },
-];
-
 const CONFIRM_OPTIONS: readonly ReplyOption[] = [
   { id: optionId('confirm', 'confirm'), label: 'Sí, confirmar' },
   { id: optionId('confirm', 'correct'), label: 'Corregir' },
@@ -197,8 +191,6 @@ export function optionsForStep(
       return LEGAL_TYPE_OPTIONS;
     case 'idType':
       return ID_TYPE_OPTIONS;
-    case 'email':
-      return EMAIL_OPTIONS;
     case 'confirm':
       return CONFIRM_OPTIONS;
     case 'anotherFarmPrompt':
@@ -257,14 +249,14 @@ function nextOwnerFarmStep(partial: RegistrationPartial): RegistrationStep | und
 function nextOwnerPersonStep(partial: RegistrationPartial): RegistrationStep | undefined {
   if (partial.idType === undefined) return 'idType';
   if (partial.idNumber === undefined) return 'idNumber';
-  if (partial.emailChoice === undefined) return 'email';
-  if (partial.emailChoice === 'write' && partial.email === undefined) return 'emailWrite';
+  if (partial.email === undefined) return 'email';
   return undefined;
 }
 
 function nextWorkerStep(partial: RegistrationPartial): RegistrationStep {
   if (partial.idType === undefined) return 'idType';
   if (partial.idNumber === undefined) return 'idNumber';
+  if (partial.email === undefined) return 'email';
   if (partial.selectedFarmId === undefined) {
     return partial.workerFarmResults !== undefined ? 'workerFarmPick' : 'workerFarmSearch';
   }
@@ -329,9 +321,7 @@ export function promptFor(
     case 'idNumberConfirm':
       return { text: readbackPrompt(partial.pendingReadback?.value ?? ''), options, layout };
     case 'email':
-      return { text: '¿Quieres agregar tu correo electrónico?', options, layout };
-    case 'emailWrite':
-      return { text: 'Escribe tu correo electrónico.' };
+      return { text: 'Escribe tu correo electrónico. Te sirve para entrar desde el computador.' };
     case 'workerFarmSearch':
       return { text: '¿Cómo se llama la finca a la que perteneces?' };
     case 'workerFarmPick':
@@ -379,7 +369,7 @@ function summaryOfOwner(partial: RegistrationPartial): string {
   const legalLabel = partial.legalType === 'juridica' ? 'jurídica' : 'natural';
   const taxLabel = partial.legalType === 'juridica' ? 'NIT' : 'cédula';
   const idTypeLabel = partial.idType ? ID_TYPE_LABELS[partial.idType] : 'documento';
-  const emailPart = partial.email ? `, correo ${partial.email}` : '';
+  const emailPart = `, correo ${partial.email ?? ''}`;
   return (
     `Entendí: finca "${partial.farmName ?? ''}", persona ${legalLabel}, ${taxLabel} ${partial.taxId ?? ''}, ` +
     `ubicada en ${partial.location ?? ''}. Capacidad de ceba: ${partial.cebaCapacity ?? 0}, ` +
@@ -468,9 +458,7 @@ export function applyAnswer(
     case 'idNumberConfirm':
       return applyReadbackConfirm(partial, 'idNumber', step, rawInput);
     case 'email':
-      return applyEmailChoice(partial, rawInput);
-    case 'emailWrite':
-      return applyEmailWrite(partial, rawInput, opts);
+      return applyEmail(partial, rawInput, opts);
     case 'workerFarmSearch':
       return applyFreeText(
         partial,
@@ -599,21 +587,7 @@ function applyReadbackConfirm(
   return ok({ ...partial, [field]: pending.value, pendingReadback: undefined });
 }
 
-function applyEmailChoice(
-  partial: RegistrationPartial,
-  rawInput: string,
-): Result<RegistrationPartial, RegistrationAnswerError> {
-  const matched = matchOption(rawInput, EMAIL_OPTIONS);
-  const value = matched ? parseOptionId(matched.id)?.value : undefined;
-  if (value === undefined) {
-    return err({ message: 'No reconocí esa opción. Elige una de las alternativas.' });
-  }
-  return ok({ ...partial, emailChoice: value === 'write' ? 'write' : 'skip' });
-}
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function applyEmailWrite(
+function applyEmail(
   partial: RegistrationPartial,
   rawInput: string,
   opts: ApplyAnswerOptions,
@@ -625,11 +599,13 @@ function applyEmailWrite(
       resetToStep: 'email',
     });
   }
-  const trimmed = rawInput.trim();
-  if (!EMAIL_PATTERN.test(trimmed)) {
-    return err({ message: 'Ese correo no parece válido. Ejemplo: nombre@correo.com.' });
+  // Misma normalización que el resto del dominio (registration.ts): minúsculas
+  // sin espacios, para no tener dos criterios de "correo válido" divergentes.
+  const normalized = normalizeDestination(rawInput, 'email');
+  if (!isValidEmail(normalized)) {
+    return err({ message: 'Ese correo no parece válido. ¿Me lo escribes otra vez?' });
   }
-  return ok({ ...partial, email: trimmed.toLowerCase() });
+  return ok({ ...partial, email: normalized });
 }
 
 function applyFarmPick(
