@@ -5,7 +5,7 @@ import { AnswerQuery } from '../application/use-cases/answer-query.js';
 import type { ChannelGateway } from '../application/ports/channel-gateway.js';
 import type { MessageDeduplicator } from '../application/ports/message-deduplicator.js';
 import { WhisperTranscriber } from '../infrastructure/speech/whisper-transcriber.js';
-import { TtsSynthesizer } from '../infrastructure/speech/tts-synthesizer.js';
+import { ElevenLabsTtsSynthesizer } from '../infrastructure/speech/elevenlabs-tts-synthesizer.js';
 import { LlmAnswerGenerator } from '../infrastructure/llm/llm-answer-generator.js';
 import { LlmEmbedder } from '../infrastructure/llm/llm-embedder.js';
 import { PgVectorRetriever } from '../infrastructure/knowledge/pgvector-retriever.js';
@@ -44,7 +44,12 @@ export function buildContainer(env: Env, logger: Logger): Container {
 
   const answerQuery = new AnswerQuery({
     transcriber: new WhisperTranscriber(openai, env.STT_MODEL),
-    synthesizer: new TtsSynthesizer(openai, env.TTS_MODEL, env.TTS_VOICE),
+    synthesizer: new ElevenLabsTtsSynthesizer(
+      env.ELEVENLABS_API_KEY,
+      env.ELEVENLABS_VOICE_ID,
+      env.ELEVENLABS_MODEL,
+      env.ELEVENLABS_OUTPUT_FORMAT,
+    ),
     retriever: new PgVectorRetriever(supabase, embedder),
     generator: new LlmAnswerGenerator(openrouter, env.LLM_MODEL),
     safetyPolicy: new RuleBasedSafetyPolicy(),

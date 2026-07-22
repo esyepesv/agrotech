@@ -19,8 +19,10 @@ const envSchema = z
 
     OPENAI_API_KEY: z.string().min(1),
     STT_MODEL: z.string().min(1).default('whisper-1'),
-    TTS_MODEL: z.string().min(1).default('tts-1'),
-    TTS_VOICE: z.string().min(1).default('alloy'),
+    ELEVENLABS_API_KEY: z.string().min(1),
+    ELEVENLABS_VOICE_ID: z.string().min(1).default('TsKSGPuG26FpNj0JzQBq'),
+    ELEVENLABS_MODEL: z.string().min(1).default('eleven_multilingual_v2'),
+    ELEVENLABS_OUTPUT_FORMAT: z.string().min(1).default('opus_48000_64'),
     EMBEDDINGS_MODEL: z.string().min(1).default('text-embedding-3-small'),
 
     SUPABASE_URL: z.string().url(),

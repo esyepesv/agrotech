@@ -13,7 +13,7 @@ Backend de **Porcia**. Asistente de conocimiento por voz para porcicultores pequ
 | Producción              | Funciones serverless de Vercel (`api/`) + `@vercel/functions` (`waitUntil`)                                                 |
 | Canales                 | Telegram Bot API y WhatsApp Business Cloud API (Meta) — **ambos activos a la vez** si hay credenciales                      |
 | LLM (generación)        | Cualquier modelo vía **OpenRouter** (API compatible con OpenAI chat completions); por defecto `anthropic/claude-sonnet-4.5` |
-| STT / TTS / Embeddings  | **OpenAI directo**: Whisper (`whisper-1`), TTS (`tts-1`, voz `alloy`), `text-embedding-3-small`                             |
+| STT / TTS / Embeddings  | **OpenAI directo**: Whisper (`whisper-1`), **ElevenLabs** TTS (`eleven_multilingual_v2`), `text-embedding-3-small`                             |
 | Vector store + datos    | Supabase (Postgres + `pgvector`)                                                                                            |
 | Validación              | zod (config y payloads de webhooks)                                                                                         |
 | Logging                 | pino                                                                                                                        |
@@ -29,7 +29,7 @@ src/
 │   ├── ports/                   # Contratos: Transcriber, SpeechSynthesizer, KnowledgeRetriever,
 │   │                             #   Embedder, AnswerGenerator, SafetyPolicy, ChannelGateway, ConversationLog
 │   └── use-cases/answer-query.ts
-├── infrastructure/               # Adaptadores: Whisper, TTS OpenAI, LLM vía OpenRouter, PgVectorRetriever,
+├── infrastructure/               # Adaptadores: Whisper, TTS ElevenLabs, LLM vía OpenRouter, PgVectorRetriever,
 │                                 #   RuleBasedSafetyPolicy, TelegramGateway, WhatsAppGateway, SupabaseConversationLog
 ├── interfaces/
 │   ├── http/                    # Servidor Fastify local: server.ts, dispatcher.ts, dedup.ts,
@@ -61,7 +61,8 @@ test/                             # vitest: domain/, application/ (fakes in-memo
 - **Node.js 22+**
 - **Telegram (dev/test):** crear un bot con [@BotFather](https://t.me/BotFather) y copiar el token → `TELEGRAM_BOT_TOKEN`.
 - **OpenRouter (LLM):** crear cuenta en [openrouter.ai](https://openrouter.ai), generar una API key → `LLM_API_KEY`. El modelo se elige en `LLM_MODEL` (default `anthropic/claude-sonnet-4.5`); cualquier modelo compatible con chat completions sirve.
-- **OpenAI (STT/TTS/embeddings):** crear una API key en [platform.openai.com](https://platform.openai.com) → `OPENAI_API_KEY`. Se usa solo para Whisper, TTS y embeddings — **no** para la generación de respuestas.
+- **OpenAI (STT/embeddings):** crear una API key en [platform.openai.com](https://platform.openai.com) → `OPENAI_API_KEY`. Se usa para Whisper y embeddings — **no** para la generación de respuestas.
+- **ElevenLabs (TTS):** crear una API key en [elevenlabs.io](https://elevenlabs.io) → `ELEVENLABS_API_KEY`. Se usa para sintetizar las notas de voz de respuesta.
 - **Supabase:** crear un proyecto en [supabase.com](https://supabase.com), habilitar la extensión `vector` (la migración ya incluye `create extension if not exists vector`, pero el plan debe soportarla) y copiar `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` (Service Role key, no la `anon`).
 - **WhatsApp Cloud API de Meta (opcional, piloto):** crear una app en [developers.facebook.com](https://developers.facebook.com) con el producto **WhatsApp Business Cloud API**, obtener `WHATSAPP_TOKEN` y `WHATSAPP_PHONE_NUMBER_ID`, y definir tú mismo un `WHATSAPP_VERIFY_TOKEN` (string secreto arbitrario). Meta limita a 5 números de prueba hasta pasar la verificación de negocio. Copiar también el **App Secret** de "Configuración básica" de la app → `WHATSAPP_APP_SECRET` (ver sección "Seguridad" abajo).
 - **`USER_ID_SALT`** (requerido): pepper secreto (≥16 caracteres, p. ej. 64 hex aleatorios generados con `openssl rand -hex 32`) usado para el HMAC del hash de usuario en `conversation_turn`. Debe mantenerse constante entre despliegues (cambiarlo hace que el mismo usuario genere un `user_hash` distinto).
@@ -144,7 +145,7 @@ Rutas expuestas:
 Pasos:
 
 1. Conectar el repositorio en el dashboard de Vercel (Import Project). Con esto, cada push a `main` dispara un deploy automático.
-2. En **Settings → Environment Variables**, configurar las mismas claves que en `.env.example`: `TELEGRAM_BOT_TOKEN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `OPENAI_API_KEY`, `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `EMBEDDINGS_MODEL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `USER_ID_SALT`, `RAG_MIN_SCORE`, `LOG_LEVEL`, `ACTIVE_CHANNEL`. `PORT` no aplica en serverless.
+2. En **Settings → Environment Variables**, configurar las mismas claves que en `.env.example`: `TELEGRAM_BOT_TOKEN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `OPENAI_API_KEY`, `STT_MODEL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`, `ELEVENLABS_OUTPUT_FORMAT`, `EMBEDDINGS_MODEL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `USER_ID_SALT`, `RAG_MIN_SCORE`, `LOG_LEVEL`, `ACTIVE_CHANNEL`. `PORT` no aplica en serverless.
 3. Desplegar con `vercel --prod` (o dejar que el auto-deploy de `main` lo haga).
 4. Registrar los webhooks apuntando al dominio del deploy:
    - Telegram: `https://<tu-deploy>.vercel.app/api/webhook/telegram`
