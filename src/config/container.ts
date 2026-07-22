@@ -10,7 +10,9 @@ import { QueryFarmState } from '../application/use-cases/query-farm-state.js';
 import { ApproveWorker } from '../application/use-cases/approve-worker.js';
 import { RegisterFarmAndUser } from '../application/use-cases/register-farm-and-user.js';
 import { RegisterFarmAndUserConversation } from '../application/use-cases/register-farm-and-user-conversation.js';
+import { VerifyAccountDestination } from '../application/use-cases/verify-account-destination.js';
 import type { RegistrationHttpDeps } from '../interfaces/http/register-routes.js';
+import type { AuthHttpDeps } from '../interfaces/http/auth-routes.js';
 import type { OtpTransportSender } from '../application/ports/otp-sender.js';
 import { SupabaseOtpStore } from '../infrastructure/persistence/supabase-otp-store.js';
 import { ChannelOtpSender } from '../infrastructure/security/channel-otp-sender.js';
@@ -58,6 +60,8 @@ export interface Container {
   readonly deduplicator: MessageDeduplicator;
   /** Dependencias de la API de registro web (spec 001 §4.2). */
   readonly registration: RegistrationHttpDeps;
+  /** Dependencias de verificación de destinos de una cuenta autenticada. */
+  readonly auth: AuthHttpDeps;
 }
 
 export function buildContainer(env: Env, logger: Logger): Container {
@@ -194,6 +198,14 @@ export function buildContainer(env: Env, logger: Logger): Container {
     },
   };
 
+  const verifyAccountDestination = new VerifyAccountDestination({
+    farmRepository,
+    otpStore: registration.otpStore,
+    hashUserId: hashUserIdWithSalt,
+    clock,
+  });
+  const auth: AuthHttpDeps = { registration, verifyAccountDestination };
+
   const handleIncomingMessage = new HandleIncomingMessage({
     answerQuery,
     logFarmEvent,
@@ -218,6 +230,7 @@ export function buildContainer(env: Env, logger: Logger): Container {
     activeChannel: env.ACTIVE_CHANNEL,
     deduplicator,
     registration,
+    auth,
   };
 }
 

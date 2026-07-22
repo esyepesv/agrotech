@@ -37,6 +37,15 @@ export class FakeFarmRepository implements FarmRepository {
 
   /** Último hash recibido por findOperatorByHash (asserts de test de regresión). */
   lastLookupHash: string | undefined;
+  /** Último `attachChatIdentity` recibido (asserts de test, hashed-zooming-flame.md Tarea 5). */
+  lastAttach:
+    | ({ userId: AppUserId } & {
+        channelUserHash?: string;
+        telegramUserHash?: string;
+        phoneVerifiedAt?: Date;
+        emailVerifiedAt?: Date;
+      })
+    | undefined;
 
   /** Atajo de setup para tests: registra granja + operario de una vez (legacy v1.1). */
   seedOperator(farm: Farm, operator: Operator): void {
@@ -114,6 +123,10 @@ export class FakeFarmRepository implements FarmRepository {
     return userId !== undefined ? (this.usersById.get(userId) ?? null) : null;
   }
 
+  async findUserById(userId: AppUserId): Promise<AppUser | null> {
+    return this.usersById.get(userId) ?? null;
+  }
+
   async attachChatIdentity(
     userId: AppUserId,
     params: {
@@ -123,6 +136,7 @@ export class FakeFarmRepository implements FarmRepository {
       readonly emailVerifiedAt?: Date;
     },
   ): Promise<Result<AppUser, PersistenceError>> {
+    this.lastAttach = { userId, ...params };
     const existing = this.usersById.get(userId);
     if (!existing) {
       return err(persistenceError(`usuario no encontrado: ${userId}`));

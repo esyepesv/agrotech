@@ -6,6 +6,7 @@ import { createLogger } from '../../shared/logger.js';
 import { ConfigurationError } from '../../shared/errors.js';
 import { AnswerQueryDispatcher } from './dispatcher.js';
 import { registerRegistrationRoutes } from './register-routes.js';
+import { registerAuthRoutes } from './auth-routes.js';
 import { registerTelegramWebhook } from './telegram-webhook.js';
 import { registerWhatsAppWebhook } from './whatsapp-webhook.js';
 
@@ -61,6 +62,7 @@ export function buildServer(env: Env): FastifyInstance {
   // config/container.ts (fuera de este archivo); el CORS queda acotado a
   // estas rutas dentro de `registerRegistrationRoutes`, nunca global.
   registerRegistrationRoutes(app, container.registration);
+  registerAuthRoutes(app, container.auth);
 
   return app;
 }

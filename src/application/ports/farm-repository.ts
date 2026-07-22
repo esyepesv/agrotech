@@ -45,6 +45,10 @@ export interface FarmRepository {
     identificationNumber: string,
   ): Promise<AppUser | null>;
   findUserByHash(channelUserHash: string): Promise<AppUser | null>;
+  // Por id (hashed-zooming-flame.md, Tarea 5): VerifyAccountDestination lo
+  // usa para leer phoneHash/email de la cuenta del token y comparar contra
+  // el destino que la persona quiere verificar.
+  findUserById(userId: AppUserId): Promise<AppUser | null>;
   // De qué celular dijo ser dueño (hashed-zooming-flame.md, Tarea 1): a
   // diferencia de findUserByHash/findOperatorByHash, NUNCA sirve para
   // reconocer un chat — solo para el ligado explícito (LinkChatIdentity,

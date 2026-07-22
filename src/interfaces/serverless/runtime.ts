@@ -8,6 +8,7 @@ import {
   type RegistrationHandlers,
   type RegistrationHttpDeps,
 } from '../http/register-routes.js';
+import { createAuthHandlers, type AuthHandlers } from '../http/auth-routes.js';
 
 interface ServerlessRuntime {
   readonly env: Env;
@@ -107,6 +108,7 @@ export async function processIncoming(message: IncomingMessage): Promise<void> {
 // por instancia caliente de función, igual que el resto de este módulo, sin
 // forzar a `getRuntime()` a conocer el tipo `RegistrationHandlers`.
 let registrationHandlers: RegistrationHandlers | undefined;
+let authHandlers: AuthHandlers | undefined;
 
 /**
  * Handlers HTTP-agnósticos de `/register/*` para los endpoints serverless
@@ -121,6 +123,14 @@ export function getRegistrationHandlers(): RegistrationHandlers {
     registrationHandlers = createRegistrationHandlers(getRuntime().container.registration);
   }
   return registrationHandlers;
+}
+
+/** Handlers autenticados de cuenta, memoizados como los de registro. */
+export function getAuthHandlers(): AuthHandlers {
+  if (authHandlers === undefined) {
+    authHandlers = createAuthHandlers(getRuntime().container.auth);
+  }
+  return authHandlers;
 }
 
 /**

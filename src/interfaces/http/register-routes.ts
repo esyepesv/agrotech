@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Clock } from '../../application/ports/clock.js';
 import type { FarmRepository } from '../../application/ports/farm-repository.js';
 import type { OtpSender } from '../../application/ports/otp-sender.js';
+import type { OtpTransport } from '../../application/ports/otp-store.js';
 import type { OtpStore } from '../../application/ports/otp-store.js';
 import type { SessionIssuer } from '../../application/ports/session-issuer.js';
 import type { RegisterFarmAndUser } from '../../application/use-cases/register-farm-and-user.js';
@@ -58,7 +59,7 @@ export interface HttpResponse {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
-interface BodyRequest {
+export interface BodyRequest {
   readonly body: unknown;
 }
 
@@ -99,6 +100,18 @@ const verifyOtpBodySchema = z.object({
   destination: z.string().min(1),
   code: z.string().regex(/^\d{6}$/, 'El código debe tener 6 dígitos.'),
 });
+
+/** Datos de OTP ya validados y normalizados, compartidos por registro y cuenta. */
+export interface RequestOtpInput {
+  readonly destination: string;
+  readonly destinationKind: OtpDestinationKind;
+  readonly transport: OtpTransport;
+}
+
+export interface VerifyOtpInput {
+  readonly destination: string;
+  readonly code: string;
+}
 
 const farmsSearchQuerySchema = z.object({
   q: z.string().trim().min(3),
@@ -155,32 +168,48 @@ async function handleOtpTransports(deps: RegistrationHttpDeps): Promise<HttpResp
   return { status: 200, body: { transports: deps.otpSender.availableTransports() } };
 }
 
-async function handleRequestOtp(
-  deps: RegistrationHttpDeps,
-  limiter: OtpRateLimiter,
-  rawBody: unknown,
-): Promise<HttpResponse> {
+export function parseRequestOtpInput(rawBody: unknown): RequestOtpInput | undefined {
   const parsed = requestOtpBodySchema.safeParse(rawBody);
   if (!parsed.success) {
-    return errorResponse(400, 'validation', 'Revisa los datos del formulario.');
+    return undefined;
   }
   const { destination, destinationKind, transport } = parsed.data;
 
   if (destinationKind === 'phone' && !isValidColombianMobile(destination)) {
-    return errorResponse(
-      400,
-      'validation',
-      'El celular debe ser colombiano, de 10 dígitos y empezar por 3.',
-    );
+    return undefined;
   }
   if (destinationKind === 'email' && !z.string().email().safeParse(destination).success) {
-    return errorResponse(400, 'validation', 'Ese correo no es válido.');
+    return undefined;
   }
 
-  const normalizedDestination = normalizeDestination(destination, destinationKind);
+  return {
+    destination: normalizeDestination(destination, destinationKind),
+    destinationKind,
+    transport,
+  };
+}
+
+export function parseVerifyOtpInput(rawBody: unknown): VerifyOtpInput | undefined {
+  const parsed = verifyOtpBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return undefined;
+  }
+  const destinationKind: OtpDestinationKind = parsed.data.destination.includes('@') ? 'email' : 'phone';
+  return {
+    destination: normalizeDestination(parsed.data.destination, destinationKind),
+    code: parsed.data.code,
+  };
+}
+
+export async function requestOtpResponse(
+  deps: RegistrationHttpDeps,
+  limiter: OtpRateLimiter,
+  input: RequestOtpInput,
+): Promise<HttpResponse> {
+  const { destination, destinationKind, transport } = input;
 
   // Cuota horaria por destino + cooldown de reenvío (spec 001 §4.2/§5).
-  const decision = limiter.check(normalizedDestination);
+  const decision = limiter.check(destination);
   if (!decision.allowed) {
     return errorResponse(
       429,
@@ -213,7 +242,7 @@ async function handleRequestOtp(
   const codeHash = deps.hashUserId(code);
 
   const saved = await deps.otpStore.saveCode(
-    { destination: normalizedDestination },
+    { destination },
     {
       destinationKind,
       transport,
@@ -230,7 +259,7 @@ async function handleRequestOtp(
     );
   }
 
-  const sent = await deps.otpSender.sendCode(transport, normalizedDestination, code);
+  const sent = await deps.otpSender.sendCode(transport, destination, code);
   if (!sent.ok) {
     const status = sent.error.kind === 'channel_not_configured' ? 503 : 502;
     const message =
@@ -250,21 +279,32 @@ async function handleRequestOtp(
   };
 }
 
+async function handleRequestOtp(
+  deps: RegistrationHttpDeps,
+  limiter: OtpRateLimiter,
+  rawBody: unknown,
+): Promise<HttpResponse> {
+  const input = parseRequestOtpInput(rawBody);
+  if (input === undefined) {
+    return errorResponse(400, 'validation', 'Revisa los datos del formulario.');
+  }
+  return requestOtpResponse(deps, limiter, input);
+}
+
 async function handleVerifyOtp(
   deps: RegistrationHttpDeps,
   rawBody: unknown,
 ): Promise<HttpResponse> {
-  const parsed = verifyOtpBodySchema.safeParse(rawBody);
-  if (!parsed.success) {
+  const input = parseVerifyOtpInput(rawBody);
+  if (input === undefined) {
     return errorResponse(400, 'invalid_code', 'Revisa el código e inténtalo de nuevo.');
   }
-  const { destination, code } = parsed.data;
+  const { destination, code } = input;
   // El contrato de verify-otp (spec 001 §4.2) no incluye destinationKind: se
   // infiere del formato del propio destino (un correo siempre trae '@').
   const destinationKind: OtpDestinationKind = destination.includes('@') ? 'email' : 'phone';
-  const normalizedDestination = normalizeDestination(destination, destinationKind);
 
-  const status = await deps.otpStore.verifyCode({ destination: normalizedDestination }, code);
+  const status = await deps.otpStore.verifyCode({ destination }, code);
   switch (status) {
     case 'verified':
       return { status: 200, body: { ok: true, verified: true, destinationKind } };

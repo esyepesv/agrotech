@@ -188,6 +188,19 @@ export class SupabaseFarmRepository implements FarmRepository {
     return toAppUser(data as AppUserRow);
   }
 
+  async findUserById(userId: AppUserId): Promise<AppUser | null> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const { data, error } = await this.client
+      .from(APP_USER_TABLE)
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error !== null || data === null) {
+      return null;
+    }
+    return toAppUser(data as AppUserRow);
+  }
+
   async findUserByPhoneHash(phoneHash: string): Promise<AppUser | null> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { data, error } = await this.client
