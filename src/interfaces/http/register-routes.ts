@@ -350,8 +350,8 @@ async function handleRegister(deps: RegistrationHttpDeps, rawBody: unknown): Pro
   };
 
   // Reutiliza la normalización/validación de dominio (mismo mensaje de error
-  // que ve el resto del sistema) para obtener el celular en E.164 antes de
-  // consultar el OTP, en vez de duplicar la regla de formato aquí.
+  // que ve el resto del sistema, incluido el correo obligatorio) en vez de
+  // duplicar las reglas de formato aquí.
   const userValidation = validateUserInput(provisionalUser);
   if (!userValidation.ok) {
     return errorResponse(
@@ -362,43 +362,12 @@ async function handleRegister(deps: RegistrationHttpDeps, rawBody: unknown): Pro
         : 'Revisa los datos del formulario.',
     );
   }
-  const normalizedPhone = userValidation.value.phone;
-  const normalizedEmail =
-    body.user.email !== undefined ? normalizeDestination(body.user.email, 'email') : undefined;
-
-  const phoneVerified = await deps.otpStore.isVerified(
-    { destination: normalizedPhone },
-    deps.config.otpVerifiedGraceSeconds,
-  );
-  const emailVerified =
-    normalizedEmail !== undefined
-      ? await deps.otpStore.isVerified(
-          { destination: normalizedEmail },
-          deps.config.otpVerifiedGraceSeconds,
-        )
-      : false;
-
-  // Regla de seguridad spec 001 §4.3: la verificación es responsabilidad de
-  // ESTE adaptador, no del caso de uso. Si NINGÚN destino quedó verificado
-  // dentro de la ventana de gracia, no se llama a `submit()` y no se
-  // persiste nada.
-  if (!phoneVerified && !emailVerified) {
-    return errorResponse(
-      412,
-      'phone_not_verified',
-      'Todavía no verificamos tu celular ni tu correo. Vuelve a pedir el código.',
-    );
-  }
-
-  // `phoneVerified` viaja con EXACTAMENTE lo que se probó — nunca se infiere
-  // `true` porque el correo esté verificado. Si la persona solo verificó su
-  // correo, este flag llega en `false` y `RegisterFarmAndUser` entonces NO
-  // liga la identidad de chat (`channel_user_hash`) al celular: ligarla de
-  // un número que nadie probó permitiría que alguien reclame el número de
-  // otra persona verificando solo su propio correo, y que el dueño real de
-  // ese número cayera, sin saberlo, dentro de esa cuenta ajena al escribirle
-  // al bot (spec 001 §4.3; arquitectura-v1.2.md §8).
-  const finalUser: UserInput = { ...provisionalUser, phoneVerified, emailVerified };
+  // El registro ya no exige verificación (decisión de producto: verificar
+  // celular/correo es opcional y posterior). Nada queda "probado" aquí, así
+  // que RegisterFarmAndUser no liga la identidad de chat: eso ocurre cuando la
+  // persona le escribe al bot desde su celular (LinkChatIdentity) o cuando
+  // verifica por OTP desde la web (VerifyAccountDestination).
+  const finalUser: UserInput = { ...provisionalUser, phoneVerified: false, emailVerified: false };
 
   const input: RegisterFarmAndUserInput =
     body.kind === 'owner'
@@ -408,15 +377,6 @@ async function handleRegister(deps: RegistrationHttpDeps, rawBody: unknown): Pro
   const outcome = await deps.registerFarmAndUser.submit(input);
   if (!outcome.ok) {
     return registrationErrorResponse(outcome.error);
-  }
-
-  // Se consume(n) el/los destino(s) que efectivamente autorizaron el
-  // registro (spec 001 §4.3) para que el código no quede reutilizable.
-  if (phoneVerified) {
-    await deps.otpStore.consume({ destination: normalizedPhone });
-  }
-  if (emailVerified && normalizedEmail !== undefined) {
-    await deps.otpStore.consume({ destination: normalizedEmail });
   }
 
   const { user, farm, operator, membershipStatus } = outcome.value;

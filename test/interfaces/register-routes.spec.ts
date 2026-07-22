@@ -139,27 +139,6 @@ function buildHarness(configOverrides: Partial<RegistrationHttpDeps['config']> =
   };
 }
 
-/** Seed directo de una verificación vigente (spec 001 §4.3: isVerified). */
-function seedVerified(
-  otpStore: FakeOtpStore,
-  clock: FakeClock,
-  destination: string,
-  destinationKind: 'phone' | 'email',
-) {
-  otpStore.entries.set(destination, {
-    params: {
-      destinationKind,
-      transport: destinationKind === 'phone' ? 'sms' : 'email',
-      codeHash: 'seed-hash',
-      ttlSeconds: 300,
-      maxAttempts: 5,
-    },
-    attempts: 0,
-    expiresAt: new Date(clock.now().getTime() + 300_000),
-    verifiedAt: clock.now(),
-  });
-}
-
 /** Seed de un código pendiente de verificar (para probar verify-otp). */
 function seedPending(
   otpStore: FakeOtpStore,
@@ -424,9 +403,11 @@ describe('registerRegistrationRoutes', () => {
   });
 
   describe('POST /register', () => {
-    it('camino feliz (dueño, celular verificado): 201 con sesión', async () => {
-      seedVerified(harness.otpStore, harness.clock, '+573001234567', 'phone');
-
+    // El OTP salió del registro (hashed-zooming-flame.md, Tarea 4): verificar
+    // celular/correo es una acción opcional posterior, nunca un requisito
+    // para crear la cuenta. Los tests viejos que esperaban `412
+    // phone_not_verified` se borraron: ese contrato del API desapareció.
+    it('registra sin ninguna verificación previa y emite sesión', async () => {
       const response = await harness.app.inject({
         method: 'POST',
         url: '/register',
@@ -440,45 +421,20 @@ describe('registerRegistrationRoutes', () => {
       expect(body.membershipStatus).toBe('activo');
       expect(body.session.token).toBeDefined();
       expect(body.session.expiresInSeconds).toBe(604800);
-
-      // El destino verificado se consume: no queda reutilizable.
-      expect(harness.otpStore.entries.has('+573001234567')).toBe(false);
     });
 
-    it('sin verificación (ni celular ni correo) devuelve 412 phone_not_verified', async () => {
+    it('no liga la identidad de chat al registrar por web', async () => {
       const response = await harness.app.inject({
         method: 'POST',
         url: '/register',
         payload: { kind: 'owner', user: userInputBody(), farm: farmInputBody() },
       });
-      expect(response.statusCode).toBe(412);
-      expect(response.json<ErrorBody>().error.code).toBe('phone_not_verified');
-    });
 
-    it('verificado SOLO por correo: registra, pero con phoneVerified:false para el caso de uso', async () => {
-      seedVerified(harness.otpStore, harness.clock, 'duena@ejemplo.com', 'email');
-
-      const response = await harness.app.inject({
-        method: 'POST',
-        url: '/register',
-        payload: {
-          kind: 'owner',
-          user: userInputBody({ email: 'Duena@Ejemplo.com' }),
-          farm: farmInputBody(),
-        },
-      });
-
-      expect(response.statusCode).toBe(201);
-      expect(harness.registerFarmAndUser.lastInput?.user.phoneVerified).toBe(false);
-      expect(harness.registerFarmAndUser.lastInput?.user.emailVerified).toBe(true);
-
-      // Efecto observable de la regla de seguridad (spec 001 §4.3): la
-      // identidad de chat NO queda ligada porque el celular no se probó.
-      const body = response.json<{ operatorId: string }>();
+      const body = response.json<RegisterBody>();
       const operator = harness.farmRepository.operatorsById.get(body.operatorId);
       const user = operator ? harness.farmRepository.usersById.get(operator.userId) : undefined;
       expect(user?.channelUserHash).toBeUndefined();
-      expect(user?.emailVerifiedAt).toBeDefined();
+      expect(user?.phoneHash).toBeTruthy();
     });
 
     it('cuerpo inválido devuelve 400 validation', async () => {
