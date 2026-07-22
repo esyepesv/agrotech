@@ -35,7 +35,11 @@ interface VerifyOtpBody {
   readonly destinationKind: string;
 }
 interface FarmsSearchBody {
-  readonly results: readonly { readonly id: string; readonly name: string; readonly location?: string }[];
+  readonly results: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly location?: string;
+  }[];
 }
 interface RegisterBody {
   readonly farmId?: string;
@@ -385,7 +389,9 @@ describe('registerRegistrationRoutes', () => {
       });
       expect(response.statusCode).toBe(200);
       expect(response.json<FarmsSearchBody>()).toEqual({
-        results: [{ id: 'farm-1', name: 'La Esperanza', location: 'Vereda El Rosal, Cundinamarca' }],
+        results: [
+          { id: 'farm-1', name: 'La Esperanza', location: 'Vereda El Rosal, Cundinamarca' },
+        ],
       });
     });
 

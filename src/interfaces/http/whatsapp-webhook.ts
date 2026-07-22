@@ -66,8 +66,7 @@ export function parseWhatsAppMessage(body: unknown): IncomingMessage | undefined
       const receivedAt = new Date();
 
       if (message.type === 'interactive' && message.interactive !== undefined) {
-        const optionId =
-          message.interactive.button_reply?.id ?? message.interactive.list_reply?.id;
+        const optionId = message.interactive.button_reply?.id ?? message.interactive.list_reply?.id;
         if (optionId !== undefined) {
           return {
             channel: 'whatsapp',

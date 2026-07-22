@@ -9,9 +9,9 @@
 -- SMS es la misma prueba de posesión (`last_transport` solo registra el
 -- último medio usado, informativo, no forma parte de la llave).
 --
--- PENDIENTE DE APLICAR: este archivo NO se aplica automáticamente. Aplicar
--- manualmente con `supabase db push` o pegando el contenido en el SQL Editor
--- del panel de Supabase (igual que 0001/0002/0003).
+-- APLICADA EN PRODUCCIÓN el 2026-07-22. Este archivo NO se aplica solo:
+-- cualquier cambio posterior hay que aplicarlo a mano en el SQL Editor del
+-- panel de Supabase (igual que 0001/0002/0003).
 
 create table if not exists otp_code (
   destination      text not null,

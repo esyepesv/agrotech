@@ -4,9 +4,9 @@
 -- "identidad de canal" a "usuario × granja × rol"). Aditiva sobre
 -- 0003_farm_module.sql: no se borra ni renombra ninguna tabla existente.
 --
--- PENDIENTE DE APLICAR: este archivo NO se aplica automáticamente. Aplicar
--- manualmente con `supabase db push` o pegando el contenido en el SQL Editor
--- del panel de Supabase (igual que 0001/0002/0003). Requiere `pgcrypto` (ya
+-- APLICADA EN PRODUCCIÓN el 2026-07-22. Este archivo NO se aplica solo:
+-- cualquier cambio posterior hay que aplicarlo a mano en el SQL Editor del
+-- panel de Supabase (igual que 0001/0002/0003). Requiere `pgcrypto` (ya
 -- creada por 0001_knowledge_chunk.sql) para `gen_random_uuid()`.
 
 -- ── Persona (app_user) ───────────────────────────────────────────────────
