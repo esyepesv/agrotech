@@ -1,5 +1,6 @@
 import type { FarmContext } from '../../domain/farm/farm-context.js';
 import { ANONYMOUS_FARM_CONTEXT } from '../../domain/farm/farm-context.js';
+import { normalizeColombianMobileToE164 } from '../../domain/farm/registration.js';
 import { INTENT_CONFIDENCE_THRESHOLD } from '../../domain/intent/intent.js';
 import { parseShortReply } from '../../domain/intent/short-reply.js';
 import type {
@@ -8,6 +9,7 @@ import type {
   MessageType,
 } from '../../domain/message/incoming-message.js';
 import type { OutgoingMessage } from '../../domain/message/outgoing-message.js';
+import { renderNumberedFallback } from '../../domain/message/reply-option.js';
 import { createQuery } from '../../domain/query/query.js';
 import { ChannelDeliveryError } from '../../domain/shared/channel-delivery-error.js';
 import type { Result } from '../../domain/shared/result.js';
@@ -15,6 +17,7 @@ import type { ChannelError, ChannelGateway } from '../ports/channel-gateway.js';
 import type { ConversationLog } from '../ports/conversation-log.js';
 import type { FarmRepository } from '../ports/farm-repository.js';
 import type { IntentClassifier } from '../ports/intent-classifier.js';
+import type { InteractiveGateway } from '../ports/interactive-gateway.js';
 import type { PendingEventStore } from '../ports/pending-event-store.js';
 import type { SpeechSynthesizer } from '../ports/speech-synthesizer.js';
 import type { Transcriber } from '../ports/transcriber.js';
@@ -23,15 +26,17 @@ import { ANSWER_QUERY_MESSAGES } from './answer-query.js';
 import type { ConfirmFarmEvent } from './confirm-farm-event.js';
 import type { FarmReply } from './farm-reply.js';
 import type { LogFarmEvent } from './log-farm-event.js';
+import type { OnboardingContext, OnboardingConversation } from './onboarding-conversation.js';
 import type { QueryFarmState } from './query-farm-state.js';
-import type { RegisterFarm } from './register-farm.js';
 
 export interface HandleIncomingMessageDeps {
   readonly answerQuery: AnswerQuery;
   readonly logFarmEvent: LogFarmEvent;
   readonly confirmFarmEvent: ConfirmFarmEvent;
   readonly queryFarmState: QueryFarmState;
-  readonly registerFarm: RegisterFarm;
+  // Tipado estructural (arquitectura-v1.2.md §4): cualquier implementación
+  // de OnboardingConversation sirve, el container decide cuál inyectar.
+  readonly onboarding: OnboardingConversation;
   readonly intentClassifier: IntentClassifier;
   readonly farmRepository: FarmRepository;
   readonly pendingEventStore: PendingEventStore;
@@ -84,18 +89,36 @@ export class HandleIncomingMessage {
     // aún no registrado (alta de granja en curso), bajo el hash del canal.
     const pendingKey = operatorWithFarm ? operatorWithFarm.operator.id : userHash;
     const hasPending = await this.deps.pendingEventStore.hasPending(pendingKey);
+    // El borrador de registro (spec 001) vive SIEMPRE bajo el hash del canal,
+    // incluso para un dueño ya registrado que da de alta otra finca. Se
+    // consulta aparte cuando la llave del operario es distinta: si no, su
+    // "sí" de confirmación caería en ConfirmFarmEvent, que consumiría el
+    // borrador y perdería el registro a medio hacer.
+    const hasOnboardingPending = operatorWithFarm
+      ? await this.deps.pendingEventStore.hasPending(userHash)
+      : hasPending;
 
     // Atajo determinista ANTES del clasificador (PLAN-v1.1.md §2): un "sí"
-    // o "no" corto con pending activo no necesita pasar por el LLM.
+    // o "no" corto con pending activo no necesita pasar por el LLM. Un
+    // registro en curso tiene prioridad sobre cualquier otro pendiente.
     const shortReply = parseShortReply(resolved.question);
-    if (shortReply !== undefined && hasPending) {
-      const reply = operatorWithFarm
-        ? await this.deps.confirmFarmEvent.handle(
-            shortReply,
-            operatorWithFarm.operator,
-            operatorWithFarm.farm,
-          )
-        : await this.deps.confirmFarmEvent.handleAnonymous(shortReply, userHash);
+    if (shortReply !== undefined && (hasPending || hasOnboardingPending)) {
+      let reply: FarmReply;
+      if (hasOnboardingPending) {
+        reply = await this.deps.onboarding.handle(
+          userHash,
+          resolved.question,
+          this.onboardingContext(message),
+        );
+      } else if (operatorWithFarm) {
+        reply = await this.deps.confirmFarmEvent.handle(
+          shortReply,
+          operatorWithFarm.operator,
+          operatorWithFarm.farm,
+        );
+      } else {
+        reply = await this.deps.confirmFarmEvent.handleAnonymous(shortReply, userHash);
+      }
       await this.deliverReply(message, gateway, resolved, reply, startedAt);
       return;
     }
@@ -151,14 +174,24 @@ export class HandleIncomingMessage {
         return;
       }
       case 'onboarding': {
-        const reply = await this.deps.registerFarm.handle(userHash, resolved.question);
+        const reply = await this.deps.onboarding.handle(
+          userHash,
+          resolved.question,
+          this.onboardingContext(message),
+        );
         await this.deliverReply(message, gateway, resolved, reply, startedAt);
         return;
       }
       case 'confirm':
       case 'cancel': {
         let reply: FarmReply;
-        if (!hasPending) {
+        if (hasOnboardingPending) {
+          reply = await this.deps.onboarding.handle(
+            userHash,
+            resolved.question,
+            this.onboardingContext(message),
+          );
+        } else if (!hasPending) {
           reply = { text: NO_PENDING_MESSAGE };
         } else if (operatorWithFarm) {
           reply = await this.deps.confirmFarmEvent.handle(
@@ -173,6 +206,16 @@ export class HandleIncomingMessage {
         return;
       }
     }
+  }
+
+  /** Lo que solo el adaptador de entrada sabe del canal (spec 001 §4.1.2). */
+  private onboardingContext(message: IncomingMessage): OnboardingContext {
+    return {
+      channel: message.channel,
+      channelUserId: message.channelUserId,
+      detectedPhone: this.detectPhone(message),
+      inputWasVoice: message.type === 'voice',
+    };
   }
 
   private async resolveText(
@@ -210,7 +253,12 @@ export class HandleIncomingMessage {
     reply: FarmReply,
     startedAt: number,
   ): Promise<void> {
+    // §4.1.3 "voz + botones": si el input fue voz, la nota de audio con la
+    // pregunta va primero (regla de formato de siempre) y, si el paso tiene
+    // opciones, el mensaje interactivo va DESPUÉS como un segundo mensaje
+    // deliberado — el mismo orden aplica para texto (texto, luego botones).
     const delivery = await this.deliver(gateway, incoming, reply.text, resolved.locale);
+    await this.deliverInteractiveExtras(gateway, incoming, reply);
     await this.record(incoming, resolved.question, reply.text, startedAt);
     this.throwIfDeliveryFailed(incoming, delivery);
   }
@@ -229,6 +277,62 @@ export class HandleIncomingMessage {
       }
     }
     return this.sendText(gateway, incoming, text);
+  }
+
+  /**
+   * Opciones cerradas (spec 001 §4.1.1) y `requestContact` (§4.1.2): best
+   * effort, nunca bloquea el flujo. Si el gateway no implementa
+   * `InteractiveGateway`, no soporta interactivos, o el envío falla, degrada
+   * a texto con `renderNumberedFallback` (§5, "fallo al enviar el mensaje
+   * interactivo").
+   */
+  private async deliverInteractiveExtras(
+    gateway: ChannelGateway,
+    incoming: IncomingMessage,
+    reply: FarmReply,
+  ): Promise<void> {
+    const interactive = asInteractiveGateway(gateway);
+
+    if (reply.requestContact === true && interactive?.requestContact !== undefined) {
+      const requested = await interactive.requestContact(incoming.channelUserId, reply.text);
+      if (requested.ok) {
+        return;
+      }
+      // El texto base ya se entregó arriba; si pedir el contacto falla, el
+      // usuario igual puede escribir su número a mano (fallback ya soportado
+      // por el paso 'phone' de la máquina de pasos).
+    }
+
+    if (reply.options === undefined || reply.options.length === 0) {
+      return;
+    }
+
+    if (interactive !== undefined && interactive.supportsInteractive()) {
+      const sent = await interactive.sendInteractive({
+        channel: incoming.channel,
+        channelUserId: incoming.channelUserId,
+        body: reply.text,
+        options: reply.options,
+        layout: reply.layout ?? 'buttons',
+      });
+      if (sent.ok) {
+        return;
+      }
+    }
+
+    await this.sendText(gateway, incoming, renderNumberedFallback(reply.text, reply.options));
+  }
+
+  /**
+   * Detección del celular por canal (spec 001 §4.1.2): WhatsApp siempre
+   * (channelUserId ES el celular); Telegram solo si el webhook ya resolvió
+   * un contacto compartido en ESTE mensaje.
+   */
+  private detectPhone(message: IncomingMessage): string | undefined {
+    if (message.channel === 'whatsapp') {
+      return normalizeColombianMobileToE164(message.channelUserId) ?? undefined;
+    }
+    return message.contactPhone;
   }
 
   private async sendText(
@@ -287,3 +391,17 @@ export const HANDLE_INCOMING_MESSAGE_MESSAGES = {
   inviteRegister: INVITE_REGISTER_MESSAGE,
   noPending: NO_PENDING_MESSAGE,
 } as const;
+
+/**
+ * `InteractiveGateway` es un puerto separado de `ChannelGateway` (ISP,
+ * arquitectura-v1.2.md §6): un gateway puede implementarlo además del
+ * contrato de v1 sin que `ChannelGateway` lo declare. Duck-typing en
+ * runtime es la forma de "preguntarle" al gateway resuelto si lo soporta.
+ */
+function asInteractiveGateway(gateway: ChannelGateway): InteractiveGateway | undefined {
+  const candidate = gateway as Partial<InteractiveGateway>;
+  return typeof candidate.supportsInteractive === 'function' &&
+    typeof candidate.sendInteractive === 'function'
+    ? (gateway as unknown as InteractiveGateway)
+    : undefined;
+}

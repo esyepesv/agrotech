@@ -5,6 +5,7 @@ import { buildContainer } from '../../config/container.js';
 import { createLogger } from '../../shared/logger.js';
 import { ConfigurationError } from '../../shared/errors.js';
 import { AnswerQueryDispatcher } from './dispatcher.js';
+import { registerRegistrationRoutes } from './register-routes.js';
 import { registerTelegramWebhook } from './telegram-webhook.js';
 import { registerWhatsAppWebhook } from './whatsapp-webhook.js';
 
@@ -54,6 +55,12 @@ export function buildServer(env: Env): FastifyInstance {
       'Ningún canal configurado: define credenciales de Telegram y/o WhatsApp',
     );
   }
+
+  // Registro web (spec 001): rutas `/register/*`, independientes de qué
+  // canales de chat estén activos. `container.registration` lo cablea
+  // config/container.ts (fuera de este archivo); el CORS queda acotado a
+  // estas rutas dentro de `registerRegistrationRoutes`, nunca global.
+  registerRegistrationRoutes(app, container.registration);
 
   return app;
 }

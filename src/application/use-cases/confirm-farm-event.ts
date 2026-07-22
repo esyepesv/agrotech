@@ -35,6 +35,9 @@ const CANCELLED_MESSAGE = 'Listo, lo descarté. No registré nada.';
 const APPEND_FAILED_MESSAGE = 'No pude guardar el registro, inténtalo de nuevo.';
 const SAVE_FAILED_MESSAGE = 'No pude guardar el registro, inténtalo de nuevo.';
 const PROJECTION_DEGRADED_SUFFIX = ' Quedó anotado; el saldo lo actualizo luego.';
+// Ventana para devolver a su sitio un borrador de registro que llegó aquí por
+// error de enrutado; corta a propósito, no es fuente de verdad.
+const ONBOARDING_RESTORE_TTL = 600;
 
 /**
  * Segundo paso del flujo de registro (PLAN-v1.1.md §2/§7): confirma o
@@ -58,7 +61,19 @@ export class ConfirmFarmEvent {
     if (pending.kind === 'farm_event') {
       return this.confirmFarmEvent(pending.draft, operator, farm);
     }
-    return this.confirmEntityStub(pending.entity, operator.channelUserHash, farm);
+    // operator.channelUserHash es opcional en v1.2 (ver operator.ts), pero
+    // este operario YA existe (vino de findOperatorByHash) y este flujo
+    // legado de v1.1 siempre lo puebla al crearlo (confirmFarmStub, abajo);
+    // el id queda como respaldo teórico, nunca debería usarse en la práctica.
+    if (pending.kind === 'register_farm_and_user') {
+      // El registro conversacional (spec 001) confirma dentro de su propio
+      // flujo y guarda su borrador bajo el hash del canal, no bajo el
+      // OperatorId. Llegar aquí significa que el orquestador enrutó mal: se
+      // devuelve el borrador a su sitio en vez de consumirlo en silencio.
+      await this.deps.pendingEventStore.savePending(operator.id, pending, ONBOARDING_RESTORE_TTL);
+      return { text: 'Tienes un registro a medias. Dime "registrar" para retomarlo.' };
+    }
+    return this.confirmEntityStub(pending.entity, operator.channelUserHash ?? operator.id, farm);
   }
 
   /**
@@ -233,9 +248,16 @@ export class ConfirmFarmEvent {
     }
     const newOperator: Operator = {
       id: this.deps.idGenerator(),
+      // Flujo legado de v1.1 (auto-alta anónima): no pasa por
+      // RegisterFarmAndUser ni crea un AppUser real, así que no hay un
+      // AppUserId genuino que referenciar; se genera uno sintético solo
+      // para satisfacer el campo requerido del nuevo Operator de v1.2
+      // (cambio mínimo para compilar — ver operator.ts).
+      userId: this.deps.idGenerator(),
       farmId: newFarm.id,
       channelUserHash,
-      role: 'admin',
+      role: 'administrador_dueno',
+      status: 'activo',
     };
     const savedOperator = await this.deps.farmRepository.saveOperator(newOperator);
     if (!savedOperator.ok) {

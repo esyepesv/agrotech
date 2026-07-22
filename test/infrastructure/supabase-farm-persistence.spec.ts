@@ -100,10 +100,12 @@ describe.skipIf(!hasSupabaseCreds || !farmTableReady)(
       createdOperatorIds.push(operatorId);
       const operator: Operator = {
         id: operatorId,
+        userId: randomUUID(),
         farmId,
         channelUserHash,
         displayName: 'test-operario',
-        role: 'admin',
+        role: 'administrador_dueno',
+        status: 'activo',
       };
       const savedOperator = await farmRepository.saveOperator(operator);
       expect(savedOperator.ok).toBe(true);

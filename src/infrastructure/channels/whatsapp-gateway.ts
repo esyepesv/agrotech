@@ -4,11 +4,22 @@ import type {
   IncomingMessage,
 } from '../../domain/message/incoming-message.js';
 import type { OutgoingMessage } from '../../domain/message/outgoing-message.js';
+import type { InteractiveMessage, ReplyOption } from '../../domain/message/reply-option.js';
 import { err, ok, type Result } from '../../domain/shared/result.js';
 import type { ChannelError, ChannelGateway } from '../../application/ports/channel-gateway.js';
+import type { InteractiveGateway } from '../../application/ports/interactive-gateway.js';
 import { resilientFetch } from '../http/resilient-fetch.js';
 
 const GRAPH_BASE = 'https://graph.facebook.com/v21.0';
+
+// Límites de la Cloud API para mensajes interactivos (spec 001 §4.1.1).
+const MAX_BUTTONS = 3;
+const BUTTON_TITLE_MAX = 20;
+const BUTTON_ID_MAX = 256;
+const LIST_ROW_TITLE_MAX = 24;
+const LIST_MAX_ROWS = 10;
+const BODY_MAX = 1024;
+const LIST_CTA_LABEL = 'Ver opciones';
 
 interface MediaUrlResponse {
   readonly url?: string;
@@ -29,7 +40,7 @@ export interface WhatsAppConfig {
  * es en dos pasos: resolver la URL por mediaId y luego bajar el binario
  * (autenticado). El envío de audio requiere subir el media primero.
  */
-export class WhatsAppGateway implements ChannelGateway {
+export class WhatsAppGateway implements ChannelGateway, InteractiveGateway {
   constructor(private readonly config: WhatsAppConfig) {}
 
   private get authHeader(): Record<string, string> {
@@ -131,6 +142,104 @@ export class WhatsAppGateway implements ChannelGateway {
       ? ok(undefined)
       : err({ kind: 'send_failed', message: `messages: HTTP ${String(response.status)}` });
   }
+
+  supportsInteractive(): boolean {
+    return true;
+  }
+
+  async sendInteractive(message: InteractiveMessage): Promise<Result<void, ChannelError>> {
+    if (message.options.length === 0) {
+      return err({ kind: 'send_failed', message: 'sendInteractive sin opciones' });
+    }
+
+    // El id lo genera quien arma el ReplyOption (namespaced reg:campo:valor,
+    // spec 001 §4.1.1): truncarlo rompería el emparejamiento por id, así que
+    // se rechaza en vez de recortarlo.
+    const idTooLong = message.options.find((option) => option.id.length > BUTTON_ID_MAX);
+    if (idTooLong !== undefined) {
+      return err({
+        kind: 'send_failed',
+        message: `reply.id excede ${String(BUTTON_ID_MAX)} caracteres: ${idTooLong.id}`,
+      });
+    }
+
+    const body = truncateChars(message.body, BODY_MAX, 'body de interactive de WhatsApp');
+
+    try {
+      if (message.layout === 'buttons') {
+        if (message.options.length > MAX_BUTTONS) {
+          // Fuera del límite duro de la Cloud API: degradación (no envío
+          // parcial) queda a cargo de quien llama, vía renderNumberedFallback.
+          return err({
+            kind: 'send_failed',
+            message: `reply buttons admite máx ${String(MAX_BUTTONS)} opciones (llegaron ${String(message.options.length)})`,
+          });
+        }
+        return await this.sendMessage(message.channelUserId, {
+          type: 'interactive',
+          interactive: {
+            type: 'button',
+            body: { text: body },
+            action: { buttons: message.options.map((option) => this.toButton(option)) },
+          },
+        });
+      }
+
+      if (message.options.length > LIST_MAX_ROWS) {
+        return err({
+          kind: 'send_failed',
+          message: `list message admite máx ${String(LIST_MAX_ROWS)} filas (llegaron ${String(message.options.length)})`,
+        });
+      }
+      return await this.sendMessage(message.channelUserId, {
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          body: { text: body },
+          action: {
+            button: LIST_CTA_LABEL,
+            sections: [{ rows: message.options.map((option) => this.toRow(option)) }],
+          },
+        },
+      });
+    } catch (error) {
+      return err({ kind: 'send_failed', message: describe(error) });
+    }
+  }
+
+  private toButton(option: ReplyOption): {
+    type: 'reply';
+    reply: { id: string; title: string };
+  } {
+    return {
+      type: 'reply',
+      reply: {
+        id: option.id,
+        title: truncateChars(option.label, BUTTON_TITLE_MAX, 'título de botón'),
+      },
+    };
+  }
+
+  private toRow(option: ReplyOption): { id: string; title: string } {
+    return {
+      id: option.id,
+      title: truncateChars(option.label, LIST_ROW_TITLE_MAX, 'título de fila de lista'),
+    };
+  }
+}
+
+/** Trunca por code point (no por code unit) para no partir un emoji/tilde a
+ * la mitad, y avisa por qué se degradó el contenido (spec 001 §5: "fallo al
+ * enviar el mensaje interactivo... etiqueta muy larga" se loguea). */
+function truncateChars(text: string, max: number, context: string): string {
+  const chars = [...text];
+  if (chars.length <= max) {
+    return text;
+  }
+  console.warn(
+    `WhatsAppGateway: truncando ${context} de ${String(chars.length)} a ${String(max)} caracteres`,
+  );
+  return chars.slice(0, max).join('').trimEnd();
 }
 
 function describe(error: unknown): string {

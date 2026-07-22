@@ -11,7 +11,9 @@ import { ConfirmFarmEvent } from '../../src/application/use-cases/confirm-farm-e
 import { HandleIncomingMessage } from '../../src/application/use-cases/handle-incoming-message.js';
 import { LogFarmEvent } from '../../src/application/use-cases/log-farm-event.js';
 import { QueryFarmState } from '../../src/application/use-cases/query-farm-state.js';
-import { RegisterFarm } from '../../src/application/use-cases/register-farm.js';
+import { ApproveWorker } from '../../src/application/use-cases/approve-worker.js';
+import { RegisterFarmAndUser } from '../../src/application/use-cases/register-farm-and-user.js';
+import { RegisterFarmAndUserConversation } from '../../src/application/use-cases/register-farm-and-user-conversation.js';
 import { RuleBasedEventSafetyPolicy } from '../../src/infrastructure/safety/rule-based-event-safety-policy.js';
 import { RuleBasedSafetyPolicy } from '../../src/infrastructure/safety/rule-based-safety-policy.js';
 import { FakeAnswerGenerator } from './fakes/fake-answer-generator.js';
@@ -66,7 +68,14 @@ function buildFarm(): Farm {
 }
 
 function buildOperator(): Operator {
-  return { id: 'operator-1', farmId: FARM_ID, channelUserHash: OPERATOR_HASH, role: 'operario' };
+  return {
+    id: 'operator-1',
+    userId: 'user-1',
+    farmId: FARM_ID,
+    channelUserHash: OPERATOR_HASH,
+    role: 'trabajador',
+    status: 'activo',
+  };
 }
 
 function medicationDraft(): FarmEventDraft {
@@ -136,14 +145,25 @@ function buildHarness() {
   });
 
   const queryFarmState = new QueryFarmState({ inventoryRepository, farmEventStore, clock });
-  const registerFarm = new RegisterFarm({ farmRepository, pendingEventStore, clock, idGenerator });
+  const onboarding = new RegisterFarmAndUserConversation({
+    registerFarmAndUser: new RegisterFarmAndUser({
+      farmRepository,
+      clock,
+      idGenerator,
+      hashUserId,
+    }),
+    approveWorker: new ApproveWorker({ farmRepository, clock }),
+    farmRepository,
+    pendingEventStore,
+    clock,
+  });
 
   const handler = new HandleIncomingMessage({
     answerQuery,
     logFarmEvent,
     confirmFarmEvent,
     queryFarmState,
-    registerFarm,
+    onboarding,
     intentClassifier,
     farmRepository,
     pendingEventStore,

@@ -46,6 +46,59 @@ const envSchema = z
     // recuperado como contexto válido en el grounding del RAG.
     RAG_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.35),
 
+    // ── v1.2 — registro de usuario + granja (spec 001) ──────────────────
+    // TTL del borrador de onboarding conversacional. Más largo que
+    // PENDING_EVENT_TTL_SECONDS porque completar ~10 campos por voz toma
+    // mucho más que confirmar un solo evento (spec 001 §5).
+    ONBOARDING_PENDING_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
+
+    // OTP de la web (spec 001 §4.2). El código nunca se persiste en claro:
+    // se guarda su HMAC con USER_ID_SALT como pepper.
+    OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+    OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+    // Ventana en la que un teléfono ya verificado puede completar el POST
+    // /register sin volver a pedir código.
+    OTP_VERIFIED_GRACE_SECONDS: z.coerce.number().int().positive().default(300),
+    OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(30),
+    // Tope de solicitudes de código por teléfono y hora: cada envío cuesta
+    // dinero en WhatsApp, así que el límite protege el bolsillo, no solo el
+    // abuso.
+    OTP_RATE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(3),
+
+    // Transportes de OTP además de los canales de chat. Cada uno es
+    // opcional: un transporte sin credenciales simplemente no se ofrece al
+    // usuario. SMS resuelve el caso del número "frío", al que WhatsApp no
+    // puede escribir sin plantilla aprobada.
+    TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+    TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+    // Remitente: un número comprado en Twilio o un Messaging Service SID.
+    TWILIO_FROM_NUMBER: z.string().min(1).optional(),
+    TWILIO_MESSAGING_SERVICE_SID: z.string().min(1).optional(),
+
+    SMTP_HOST: z.string().min(1).optional(),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    SMTP_USER: z.string().min(1).optional(),
+    SMTP_PASSWORD: z.string().min(1).optional(),
+    SMTP_FROM: z.string().min(1).optional(),
+
+    // Secreto de firma de la sesión web (HS256). Requerido: sin él la API de
+    // registro emitiría sesiones falsificables, así que el proceso no debe
+    // levantar. 32 caracteres mínimo (p. ej. 64 hex aleatorios).
+    SESSION_JWT_SECRET: z.string().min(32),
+    SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(604800),
+
+    // Orígenes permitidos para la app de registro (lista separada por comas).
+    // Vacío = sin CORS habilitado (solo consumo desde el mismo origen).
+    CORS_ALLOWED_ORIGINS: z
+      .string()
+      .default('')
+      .transform((raw) =>
+        raw
+          .split(',')
+          .map((origin) => origin.trim())
+          .filter((origin) => origin.length > 0),
+      ),
+
     PORT: z.coerce.number().int().positive().default(3000),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     ACTIVE_CHANNEL: z.enum(['telegram', 'whatsapp']).default('telegram'),

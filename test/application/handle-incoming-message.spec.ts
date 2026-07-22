@@ -11,7 +11,9 @@ import {
 } from '../../src/application/use-cases/handle-incoming-message.js';
 import { LogFarmEvent } from '../../src/application/use-cases/log-farm-event.js';
 import { QueryFarmState } from '../../src/application/use-cases/query-farm-state.js';
-import { RegisterFarm } from '../../src/application/use-cases/register-farm.js';
+import { ApproveWorker } from '../../src/application/use-cases/approve-worker.js';
+import { RegisterFarmAndUser } from '../../src/application/use-cases/register-farm-and-user.js';
+import { RegisterFarmAndUserConversation } from '../../src/application/use-cases/register-farm-and-user-conversation.js';
 import { FakeAnswerGenerator } from './fakes/fake-answer-generator.js';
 import { FakeChannelGateway } from './fakes/fake-channel-gateway.js';
 import { FakeClock } from './fakes/fake-clock.js';
@@ -72,7 +74,14 @@ function buildFarm(): Farm {
 }
 
 function buildOperator(): Operator {
-  return { id: 'operator-1', farmId: FARM_ID, channelUserHash: OPERATOR_HASH, role: 'operario' };
+  return {
+    id: 'operator-1',
+    userId: 'user-1',
+    farmId: FARM_ID,
+    channelUserHash: OPERATOR_HASH,
+    role: 'trabajador',
+    status: 'activo',
+  };
 }
 
 function feedDeliveryDraft(camposFaltantes: string[] = []): FarmEventDraft {
@@ -144,14 +153,25 @@ function buildHarness() {
 
   const queryFarmState = new QueryFarmState({ inventoryRepository, farmEventStore, clock });
 
-  const registerFarm = new RegisterFarm({ farmRepository, pendingEventStore, clock, idGenerator });
+  const onboarding = new RegisterFarmAndUserConversation({
+    registerFarmAndUser: new RegisterFarmAndUser({
+      farmRepository,
+      clock,
+      idGenerator,
+      hashUserId,
+    }),
+    approveWorker: new ApproveWorker({ farmRepository, clock }),
+    farmRepository,
+    pendingEventStore,
+    clock,
+  });
 
   const handler = new HandleIncomingMessage({
     answerQuery,
     logFarmEvent,
     confirmFarmEvent,
     queryFarmState,
-    registerFarm,
+    onboarding,
     intentClassifier,
     farmRepository,
     pendingEventStore,
@@ -339,7 +359,12 @@ describe('HandleIncomingMessage', () => {
 
   // ── Alta de granja para usuario anónimo (Corte 1, tarea 6) ────────────
 
-  it('anónimo + onboarding con nombre → propone crear la granja con ese nombre', async () => {
+  // El alta ya no es el flujo mínimo de v1.1 (nombre → "¿la creo?"): el spec
+  // 001 la reemplazó por una conversación multi-turno que arranca por el rol.
+  // Aquí se prueba el ENRUTADO del orquestador; los pasos internos de la
+  // conversación tienen su propia suite.
+
+  it('anónimo + onboarding → arranca la conversación de registro por el rol', async () => {
     const h = buildHarness();
     const text = 'quiero registrar mi granja Villa Clara';
     h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
@@ -347,45 +372,39 @@ describe('HandleIncomingMessage', () => {
     await h.handler.handle(textMessage(text), h.gateway);
 
     expect(h.gateway.sent[0]?.text).toBe(
-      '¿Creo tu granja con el nombre "Villa Clara"? Di sí para confirmar.',
+      '¿Eres el dueño/administrador de la finca o trabajas en ella?',
     );
     expect(await h.pendingEventStore.hasPending(hashUserId('user-1'))).toBe(true);
   });
 
-  it('anónimo + "sí" tras proponer la granja → crea granja y operario (queda registrado)', async () => {
-    const h = buildHarness();
-    const text = 'quiero registrar mi granja Villa Clara';
-    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
-    await h.handler.handle(textMessage(text), h.gateway);
-
-    await h.handler.handle(textMessage('sí'), h.gateway);
-
-    expect(h.gateway.sent[1]?.text).toContain('creé tu granja "Villa Clara"');
-    const registered = await h.farmRepository.findOperatorByHash(hashUserId('user-1'));
-    expect(registered).not.toBeNull();
-    expect(registered?.farm.name).toBe('Villa Clara');
-    expect(registered?.operator.role).toBe('admin');
-  });
-
-  it('anónimo + "no" tras proponer la granja → descarta y no crea nada', async () => {
-    const h = buildHarness();
-    const text = 'quiero registrar mi granja Villa Clara';
-    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
-    await h.handler.handle(textMessage(text), h.gateway);
-
-    await h.handler.handle(textMessage('no'), h.gateway);
-
-    expect(h.gateway.sent[1]?.text).toBe('Listo, lo descarté. No registré nada.');
-    expect(await h.farmRepository.findOperatorByHash(hashUserId('user-1'))).toBeNull();
-  });
-
-  it('anónimo + onboarding sin nombre (solo frase de intención) → pregunta el nombre', async () => {
+  it('el borrador de registro sobrevive a un "sí" corto (no lo consume ConfirmFarmEvent)', async () => {
     const h = buildHarness();
     const text = 'quiero registrarme';
     h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
-
     await h.handler.handle(textMessage(text), h.gateway);
 
-    expect(h.gateway.sent[0]?.text).toBe('¿Cómo se llama tu granja?');
+    // El atajo determinista de "sí" apunta a ConfirmFarmEvent, que haría
+    // takePending y destruiría el registro a medio hacer si el orquestador
+    // no diera prioridad al borrador de onboarding bajo el hash del canal.
+    await h.handler.handle(textMessage('sí'), h.gateway);
+
+    expect(h.gateway.sent[1]?.text).not.toBe('Listo, lo descarté. No registré nada.');
+    expect(await h.pendingEventStore.hasPending(hashUserId('user-1'))).toBe(true);
+    expect(await h.farmRepository.findOperatorByHash(hashUserId('user-1'))).toBeNull();
+  });
+
+  it('elegir "Soy dueño" por botón avanza al nombre de la finca', async () => {
+    const h = buildHarness();
+    const text = 'quiero registrarme';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+    await h.handler.handle(textMessage(text), h.gateway);
+
+    // Una pulsación llega como texto cuyo contenido es el id de la opción.
+    const tap = 'reg:role:administrador_dueno';
+    h.intentClassifier.respuestas.set(tap, { kind: 'onboarding', confidence: 0.9 });
+    await h.handler.handle(textMessage(tap), h.gateway);
+
+    expect(h.gateway.sent[1]?.text.toLowerCase()).toContain('finca');
+    expect(await h.farmRepository.findOperatorByHash(hashUserId('user-1'))).toBeNull();
   });
 });

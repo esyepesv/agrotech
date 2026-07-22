@@ -7,7 +7,17 @@ import { ConfirmFarmEvent } from '../application/use-cases/confirm-farm-event.js
 import { HandleIncomingMessage } from '../application/use-cases/handle-incoming-message.js';
 import { LogFarmEvent } from '../application/use-cases/log-farm-event.js';
 import { QueryFarmState } from '../application/use-cases/query-farm-state.js';
-import { RegisterFarm } from '../application/use-cases/register-farm.js';
+import { ApproveWorker } from '../application/use-cases/approve-worker.js';
+import { RegisterFarmAndUser } from '../application/use-cases/register-farm-and-user.js';
+import { RegisterFarmAndUserConversation } from '../application/use-cases/register-farm-and-user-conversation.js';
+import type { RegistrationHttpDeps } from '../interfaces/http/register-routes.js';
+import type { OtpTransportSender } from '../application/ports/otp-sender.js';
+import { SupabaseOtpStore } from '../infrastructure/persistence/supabase-otp-store.js';
+import { ChannelOtpSender } from '../infrastructure/security/channel-otp-sender.js';
+import { RoutingOtpSender } from '../infrastructure/security/routing-otp-sender.js';
+import { SmtpEmailSender } from '../infrastructure/security/smtp-email-sender.js';
+import { TwilioSmsSender } from '../infrastructure/security/twilio-sms-sender.js';
+import { JwtSessionIssuer } from '../infrastructure/security/jwt-session-issuer.js';
 import type { ChannelGateway } from '../application/ports/channel-gateway.js';
 import type { MessageDeduplicator } from '../application/ports/message-deduplicator.js';
 import { WhisperTranscriber } from '../infrastructure/speech/whisper-transcriber.js';
@@ -46,6 +56,8 @@ export interface Container {
   readonly resolveGateway: (channel: Channel) => ChannelGateway;
   readonly activeChannel: Channel;
   readonly deduplicator: MessageDeduplicator;
+  /** Dependencias de la API de registro web (spec 001 §4.2). */
+  readonly registration: RegistrationHttpDeps;
 }
 
 export function buildContainer(env: Env, logger: Logger): Container {
@@ -101,20 +113,93 @@ export function buildContainer(env: Env, logger: Logger): Container {
 
   const queryFarmState = new QueryFarmState({ inventoryRepository, farmEventStore, clock });
 
-  const registerFarm = new RegisterFarm({
+  // ── Registro de usuario + granja (v1.2, spec 001) ──────────────────────
+  const hashUserIdWithSalt = (raw: string): string => hashUserId(raw, env.USER_ID_SALT);
+
+  const registerFarmAndUser = new RegisterFarmAndUser({
+    farmRepository,
+    clock,
+    idGenerator: randomUUID,
+    hashUserId: hashUserIdWithSalt,
+  });
+  const approveWorker = new ApproveWorker({ farmRepository, clock });
+
+  const resolveGateway = buildGatewayResolver(env);
+
+  // Reemplaza a RegisterFarm (v1.1): mismo lugar en el router de intención,
+  // pero flujo multi-turno completo con botones y voz (spec 001 §4.1).
+  const onboarding = new RegisterFarmAndUserConversation({
+    registerFarmAndUser,
+    approveWorker,
     farmRepository,
     pendingEventStore,
     clock,
-    idGenerator: randomUUID,
-    pendingTtlSeconds: env.PENDING_EVENT_TTL_SECONDS,
+    pendingTtlSeconds: env.ONBOARDING_PENDING_TTL_SECONDS,
   });
+
+  // Transportes de OTP: solo entran al enrutador los que tengan credenciales;
+  // `isConfigured()` de cada uno decide si se le ofrece al usuario.
+  const transportSenders: OtpTransportSender[] = [
+    new ChannelOtpSender('whatsapp', resolveGateway),
+    new ChannelOtpSender('telegram', resolveGateway),
+  ];
+  if (env.TWILIO_ACCOUNT_SID !== undefined && env.TWILIO_AUTH_TOKEN !== undefined) {
+    transportSenders.push(
+      new TwilioSmsSender({
+        accountSid: env.TWILIO_ACCOUNT_SID,
+        authToken: env.TWILIO_AUTH_TOKEN,
+        ...(env.TWILIO_FROM_NUMBER === undefined ? {} : { from: env.TWILIO_FROM_NUMBER }),
+        ...(env.TWILIO_MESSAGING_SERVICE_SID === undefined
+          ? {}
+          : { messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID }),
+      }),
+    );
+  }
+  if (
+    env.SMTP_HOST !== undefined &&
+    env.SMTP_USER !== undefined &&
+    env.SMTP_PASSWORD !== undefined &&
+    env.SMTP_FROM !== undefined
+  ) {
+    transportSenders.push(
+      new SmtpEmailSender({
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT,
+        user: env.SMTP_USER,
+        password: env.SMTP_PASSWORD,
+        from: env.SMTP_FROM,
+        ttlMinutes: Math.round(env.OTP_TTL_SECONDS / 60),
+      }),
+    );
+  }
+
+  const registration: RegistrationHttpDeps = {
+    registerFarmAndUser,
+    farmRepository,
+    // El pepper del hash del código es el mismo USER_ID_SALT: el código nunca
+    // se guarda en claro (spec 001 §4.2).
+    otpStore: new SupabaseOtpStore(supabase, clock, env.USER_ID_SALT),
+    otpSender: new RoutingOtpSender(transportSenders),
+    sessionIssuer: new JwtSessionIssuer(env.SESSION_JWT_SECRET),
+    clock,
+    hashUserId: hashUserIdWithSalt,
+    config: {
+      otpTtlSeconds: env.OTP_TTL_SECONDS,
+      otpMaxAttempts: env.OTP_MAX_ATTEMPTS,
+      otpVerifiedGraceSeconds: env.OTP_VERIFIED_GRACE_SECONDS,
+      otpResendCooldownSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
+      otpRateLimitPerHour: env.OTP_RATE_LIMIT_PER_HOUR,
+      sessionTtlSeconds: env.SESSION_TTL_SECONDS,
+      corsAllowedOrigins: env.CORS_ALLOWED_ORIGINS,
+    },
+  };
 
   const handleIncomingMessage = new HandleIncomingMessage({
     answerQuery,
     logFarmEvent,
     confirmFarmEvent,
     queryFarmState,
-    registerFarm,
+    onboarding,
     intentClassifier: new LlmIntentClassifier(openrouter, env.INTENT_MODEL),
     farmRepository,
     pendingEventStore,
@@ -124,7 +209,6 @@ export function buildContainer(env: Env, logger: Logger): Container {
     hashUserId: (channelUserId) => hashUserId(channelUserId, env.USER_ID_SALT),
   });
 
-  const resolveGateway = buildGatewayResolver(env);
   const deduplicator = new SupabaseMessageDeduplicator(supabase, logger);
 
   return {
@@ -133,6 +217,7 @@ export function buildContainer(env: Env, logger: Logger): Container {
     resolveGateway,
     activeChannel: env.ACTIVE_CHANNEL,
     deduplicator,
+    registration,
   };
 }
 

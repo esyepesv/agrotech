@@ -3,6 +3,11 @@ import { buildContainer, type Container } from '../../config/container.js';
 import { createLogger, type Logger } from '../../shared/logger.js';
 import { SeenMessages } from '../http/dedup.js';
 import type { IncomingMessage } from '../../domain/message/incoming-message.js';
+import {
+  createRegistrationHandlers,
+  type RegistrationHandlers,
+  type RegistrationHttpDeps,
+} from '../http/register-routes.js';
 
 interface ServerlessRuntime {
   readonly env: Env;
@@ -94,4 +99,35 @@ export async function processIncoming(message: IncomingMessage): Promise<void> {
       'fallo al procesar mensaje entrante',
     );
   }
+}
+
+// Memoizado aparte de `runtime` (y no dentro de `ServerlessRuntime`) porque
+// `createRegistrationHandlers` construye los `OtpRateLimiter` en memoria
+// (spec 001 §4.2/§5, ver otp-rate-limiter.ts): deben existir una única vez
+// por instancia caliente de función, igual que el resto de este módulo, sin
+// forzar a `getRuntime()` a conocer el tipo `RegistrationHandlers`.
+let registrationHandlers: RegistrationHandlers | undefined;
+
+/**
+ * Handlers HTTP-agnósticos de `/register/*` para los endpoints serverless
+ * (`api/register/*.ts`), memoizados por instancia. Usa
+ * `container.registration` (cableado en `config/container.ts`, fuera de
+ * este archivo) — el mismo objeto que consume `registerRegistrationRoutes`
+ * en el servidor Fastify local, así que ninguna lógica de negocio se
+ * duplica entre las dos superficies.
+ */
+export function getRegistrationHandlers(): RegistrationHandlers {
+  if (registrationHandlers === undefined) {
+    registrationHandlers = createRegistrationHandlers(getRuntime().container.registration);
+  }
+  return registrationHandlers;
+}
+
+/**
+ * Config de registro memoizada (para que `api/register/_cors.ts` sepa qué
+ * orígenes permitir sin reconstruir el container en cada handler). Mismo
+ * objeto que usan los handlers de arriba.
+ */
+export function getRegistrationConfig(): RegistrationHttpDeps['config'] {
+  return getRuntime().container.registration.config;
 }

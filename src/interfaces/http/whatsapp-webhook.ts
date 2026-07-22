@@ -14,6 +14,15 @@ const messageSchema = z.object({
   type: z.string(),
   text: z.object({ body: z.string() }).optional(),
   audio: z.object({ id: z.string() }).optional(),
+  // Botón/fila de lista tocados (spec 001 §4.1.1): el id namespaced viaja en
+  // button_reply.id o list_reply.id según el tipo de mensaje interactivo.
+  interactive: z
+    .object({
+      type: z.string(),
+      button_reply: z.object({ id: z.string() }).optional(),
+      list_reply: z.object({ id: z.string() }).optional(),
+    })
+    .optional(),
 });
 
 const payloadSchema = z.object({
@@ -55,6 +64,22 @@ export function parseWhatsAppMessage(body: unknown): IncomingMessage | undefined
       }
 
       const receivedAt = new Date();
+
+      if (message.type === 'interactive' && message.interactive !== undefined) {
+        const optionId =
+          message.interactive.button_reply?.id ?? message.interactive.list_reply?.id;
+        if (optionId !== undefined) {
+          return {
+            channel: 'whatsapp',
+            channelUserId: message.from,
+            messageId: message.id,
+            type: 'text',
+            text: optionId,
+            receivedAt,
+          };
+        }
+        continue;
+      }
 
       if (message.type === 'audio' && message.audio !== undefined) {
         return {
