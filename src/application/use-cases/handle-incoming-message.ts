@@ -1,6 +1,8 @@
 import type { FarmContext } from '../../domain/farm/farm-context.js';
 import { ANONYMOUS_FARM_CONTEXT } from '../../domain/farm/farm-context.js';
 import { channelIdentityValue } from '../../domain/message/channel-identity.js';
+import { chatMenuReply, greetingFor } from '../../domain/farm/chat-menu.js';
+import { classifySmallTalk } from '../../domain/query/small-talk.js';
 import { INTENT_CONFIDENCE_THRESHOLD } from '../../domain/intent/intent.js';
 import { parseShortReply } from '../../domain/intent/short-reply.js';
 import type {
@@ -28,6 +30,7 @@ import type { FarmReply } from './farm-reply.js';
 import type { LogFarmEvent } from './log-farm-event.js';
 import type { OnboardingContext, OnboardingConversation } from './onboarding-conversation.js';
 import type { QueryFarmState } from './query-farm-state.js';
+import type { LinkChatIdentity } from './link-chat-identity.js';
 
 export interface HandleIncomingMessageDeps {
   readonly answerQuery: AnswerQuery;
@@ -46,6 +49,7 @@ export interface HandleIncomingMessageDeps {
   // Mismo hasheo con sal secreta que v1 (D2 de PLAN-v1.1.md); en Corte 1 lo
   // implementa un helper HMAC-SHA256 compartido con USER_ID_SALT.
   readonly hashUserId: (channelUserId: string) => string;
+  readonly linkChatIdentity: LinkChatIdentity;
 }
 
 const INVITE_REGISTER_MESSAGE =
@@ -99,6 +103,41 @@ export class HandleIncomingMessage {
     const hasOnboardingPending = operatorWithFarm
       ? await this.deps.pendingEventStore.hasPending(userHash)
       : hasPending;
+
+    if (operatorWithFarm === null && !hasOnboardingPending) {
+      const phone = this.detectPhone(message);
+      if (phone !== undefined) {
+        const user = await this.deps.farmRepository.findUserByPhoneHash(this.deps.hashUserId(phone));
+        if (user !== null) {
+          const linked = await this.deps.linkChatIdentity.tryLink(
+            message.channel,
+            message.channelUserId,
+            phone,
+          );
+          if (linked !== null) {
+            await this.deliverReply(message, gateway, resolved, { text: greetingFor(user.displayName) }, startedAt);
+            return;
+          }
+        }
+      }
+
+      if (resolved.question === 'menu:register') {
+        const reply = await this.deps.onboarding.handle(userHash, resolved.question, this.onboardingContext(message));
+        await this.deliverReply(message, gateway, resolved, reply, startedAt);
+        return;
+      }
+      if (resolved.question === 'menu:login') {
+        const reply: FarmReply = message.channel === 'telegram'
+          ? { text: 'Comparte tu número para encontrar tu cuenta.', requestContact: true }
+          : { text: 'No encontramos una cuenta con este número. Puedes registrarte o escribirnos para ayudarte.' };
+        await this.deliverReply(message, gateway, resolved, reply, startedAt);
+        return;
+      }
+      if (classifySmallTalk(resolved.question) === 'greeting') {
+        await this.deliverReply(message, gateway, resolved, chatMenuReply(), startedAt);
+        return;
+      }
+    }
 
     // Atajo determinista ANTES del clasificador (PLAN-v1.1.md §2): un "sí"
     // o "no" corto con pending activo no necesita pasar por el LLM. Un

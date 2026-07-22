@@ -11,6 +11,7 @@ import {
   HandleIncomingMessage,
 } from '../../src/application/use-cases/handle-incoming-message.js';
 import { LogFarmEvent } from '../../src/application/use-cases/log-farm-event.js';
+import { LinkChatIdentity } from '../../src/application/use-cases/link-chat-identity.js';
 import { QueryFarmState } from '../../src/application/use-cases/query-farm-state.js';
 import { ApproveWorker } from '../../src/application/use-cases/approve-worker.js';
 import { RegisterFarmAndUser } from '../../src/application/use-cases/register-farm-and-user.js';
@@ -191,6 +192,7 @@ function buildHarness() {
     synthesizer,
     conversationLog,
     hashUserId,
+    linkChatIdentity: new LinkChatIdentity({ farmRepository, hashUserId, clock }),
   });
 
   return {
@@ -225,6 +227,15 @@ function seedSolla(h: ReturnType<typeof buildHarness>, qty = 20): void {
 }
 
 describe('HandleIncomingMessage', () => {
+  it('saluda con menú a un chat desconocido', async () => {
+    const h = buildHarness();
+
+    await h.handler.handle(textMessage('hola'), h.gateway);
+
+    expect(h.gateway.sent[0]?.text).toContain('¿En qué te puedo ayudar?');
+    expect(h.gateway.sent[1]?.text).toContain('1. Registrarme');
+  });
+
   it('pregunta de conocimiento → responde vía AnswerQuery', async () => {
     const h = buildHarness();
 

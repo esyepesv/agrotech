@@ -12,6 +12,7 @@ import { RegisterFarmAndUser } from '../application/use-cases/register-farm-and-
 import { RegisterFarmAndUserConversation } from '../application/use-cases/register-farm-and-user-conversation.js';
 import { VerifyAccountDestination } from '../application/use-cases/verify-account-destination.js';
 import { LoginWithOtp } from '../application/use-cases/login-with-otp.js';
+import { LinkChatIdentity } from '../application/use-cases/link-chat-identity.js';
 import type { RegistrationHttpDeps } from '../interfaces/http/register-routes.js';
 import type { AuthHttpDeps } from '../interfaces/http/auth-routes.js';
 import type { OtpTransportSender } from '../application/ports/otp-sender.js';
@@ -212,6 +213,7 @@ export function buildContainer(env: Env, logger: Logger): Container {
     sessionTtlSeconds: env.SESSION_TTL_SECONDS,
   });
   const auth: AuthHttpDeps = { registration, verifyAccountDestination, loginWithOtp };
+  const linkChatIdentity = new LinkChatIdentity({ farmRepository, hashUserId: hashUserIdWithSalt, clock });
 
   const handleIncomingMessage = new HandleIncomingMessage({
     answerQuery,
@@ -226,6 +228,7 @@ export function buildContainer(env: Env, logger: Logger): Container {
     synthesizer: new TtsSynthesizer(openai, env.TTS_MODEL, env.TTS_VOICE),
     conversationLog: new SupabaseConversationLog(supabase, env.USER_ID_SALT),
     hashUserId: (channelUserId) => hashUserId(channelUserId, env.USER_ID_SALT),
+    linkChatIdentity,
   });
 
   const deduplicator = new SupabaseMessageDeduplicator(supabase, logger);
