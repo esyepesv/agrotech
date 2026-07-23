@@ -47,8 +47,11 @@ const REFUSAL_MESSAGE =
   'alimentación, condición corporal y prácticas de crianza porcina.';
 
 const NO_KNOWLEDGE_MESSAGE =
-  'No tengo información confiable para responderte eso con seguridad. ' +
-  'Te sugiero consultar a un técnico o zootecnista de confianza.';
+  'Aún no tengo información respaldada para responder eso. ' +
+  'Puedes reformular la pregunta con más detalle sobre el manejo, la etapa o el problema que quieres resolver.';
+
+const TEMPORARY_UNAVAILABLE_MESSAGE =
+  'Ahora mismo no pude preparar una respuesta por un problema temporal. Intenta de nuevo en unos minutos.';
 
 const WELCOME_MESSAGE =
   '¡Hola! 👋 Soy tu asesor porcícola. Te ayudo con manejo reproductivo, ' +
@@ -152,7 +155,19 @@ export class AnswerQuery {
     // Refresca el "escribiendo…" antes de la generación (en Telegram dura ~5 s;
     // en WhatsApp la ventana de 25 s hace de esto un refresco inofensivo).
     void gateway.indicateTyping(message);
-    const answer = await this.generateGroundedAnswer(question, locale);
+    let answer: { text: string; sources: readonly KnowledgeReference[] };
+    try {
+      answer = await this.generateGroundedAnswer(question, locale);
+    } catch (error: unknown) {
+      // El recuperador (Supabase/pgvector) puede fallar antes de que exista
+      // contexto. No se debe confundir una caída técnica con falta de
+      // conocimiento ni responder con recomendaciones veterinarias.
+      console.error(`[rag] recuperación falló: ${describeError(error)}`);
+      const delivery = await this.deliver(gateway, message, TEMPORARY_UNAVAILABLE_MESSAGE, locale);
+      await this.record(message, question, TEMPORARY_UNAVAILABLE_MESSAGE, 'refuse', startedAt);
+      this.throwIfDeliveryFailed(message, delivery);
+      return;
+    }
     const reviewed = this.applyOutputGuardrail(question, answer.text);
     const delivery = await this.deliver(gateway, message, reviewed.text, locale);
     await this.record(message, question, reviewed.text, reviewed.action, startedAt);
@@ -223,15 +238,14 @@ export class AnswerQuery {
 
     const generated = await this.deps.generator.generate({ question, context, locale });
     if (!generated.ok || generated.value.text.trim().length === 0) {
-      // Un fallo del proveedor (clave inválida, sin crédito, modelo caído) se
-      // enmascara como "sin información": lo dejamos en logs para no volver a
-      // diagnosticarlo a ciegas la próxima vez.
+      // Un fallo del proveedor (clave inválida, sin crédito, modelo caído) no
+      // es falta de conocimiento: se informa como indisponibilidad temporal.
       if (!generated.ok) {
         console.error(
           `[llm] generación falló (${generated.error.kind}): ${generated.error.message}`,
         );
       }
-      return { text: NO_KNOWLEDGE_MESSAGE, sources: context.map(toReference) };
+      return { text: TEMPORARY_UNAVAILABLE_MESSAGE, sources: context.map(toReference) };
     }
 
     return { text: generated.value.text, sources: generated.value.usedSources };
@@ -311,10 +325,15 @@ export class AnswerQuery {
   }
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : 'error desconocido';
+}
+
 export const ANSWER_QUERY_MESSAGES = {
   escalation: ESCALATION_MESSAGE,
   refusal: REFUSAL_MESSAGE,
   noKnowledge: NO_KNOWLEDGE_MESSAGE,
+  temporarilyUnavailable: TEMPORARY_UNAVAILABLE_MESSAGE,
   welcome: WELCOME_MESSAGE,
   thanks: THANKS_MESSAGE,
   sttFailed: STT_FAILED_MESSAGE,

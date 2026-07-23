@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IncomingMessage } from '../../src/domain/message/incoming-message.js';
+import type { RetrievedChunk } from '../../src/domain/knowledge/retrieved-chunk.js';
 import { err, ok } from '../../src/domain/shared/result.js';
 import {
   AnswerQuery,
@@ -140,6 +141,7 @@ describe('AnswerQuery', () => {
     );
 
     expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.noKnowledge);
+    expect(gateway.sent[0]?.text).not.toMatch(/veterinari|zootecn/i);
     expect(deps.generator.inputs).toHaveLength(0);
     expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'answer' });
   });
@@ -171,7 +173,7 @@ describe('AnswerQuery', () => {
     expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'refuse' });
   });
 
-  it('generador falla → cae al mensaje "no sé" (grounding, sin alucinar)', async () => {
+  it('generador falla → informa indisponibilidad temporal, sin fingir falta de conocimiento', async () => {
     const deps = buildDeps({
       generator: new FakeAnswerGenerator(err({ kind: 'provider_failure', message: 'llm caído' })),
     });
@@ -179,8 +181,25 @@ describe('AnswerQuery', () => {
 
     await new AnswerQuery(deps).handle(textMessage('¿cada cuánto sirvo el concentrado?'), gateway);
 
-    expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.noKnowledge);
+    expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.temporarilyUnavailable);
     expect(deps.conversationLog.turns).toHaveLength(1);
+  });
+
+  it('recuperador falla → informa indisponibilidad temporal sin escalar a veterinario', async () => {
+    class FailingKnowledgeRetriever extends FakeKnowledgeRetriever {
+      override async retrieve(_query: string, _k: number): Promise<RetrievedChunk[]> {
+        throw new Error('Supabase no disponible');
+      }
+    }
+
+    const deps = buildDeps({ retriever: new FailingKnowledgeRetriever() });
+    const gateway = new FakeChannelGateway();
+
+    await new AnswerQuery(deps).handle(textMessage('¿cada cuánto sirvo el concentrado?'), gateway);
+
+    expect(gateway.sent[0]?.text).toBe(ANSWER_QUERY_MESSAGES.temporarilyUnavailable);
+    expect(gateway.sent[0]?.text).not.toMatch(/veterinari|zootecn/i);
+    expect(deps.conversationLog.turns[0]).toMatchObject({ action: 'refuse' });
   });
 
   it('envío al canal falla → handle() rechaza, pero el turno queda registrado (no silencioso)', async () => {

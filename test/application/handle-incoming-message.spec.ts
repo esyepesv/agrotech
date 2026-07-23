@@ -518,6 +518,25 @@ describe('HandleIncomingMessage', () => {
     expect(gateway.sent[0]?.text).toBe('¿Cómo se llama tu finca?');
   });
 
+  it('el nombre libre de la finca continúa el registro sin invocar al asistente', async () => {
+    const gateway = new FakeInteractiveChannelGateway();
+    const h = buildHarness(gateway);
+    const text = 'quiero registrarme';
+    const tap = 'reg:role:administrador_dueno';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+    h.intentClassifier.respuestas.set(tap, { kind: 'onboarding', confidence: 0.9 });
+
+    await h.handler.handle(textMessage(text), gateway);
+    await h.handler.handle(textMessage(tap), gateway);
+    await h.handler.handle(contactMessage('+573001234567'), gateway);
+    await h.handler.handle(textMessage("YP's farm"), gateway);
+
+    expect(h.intentClassifier.calls).not.toContain("YP's farm");
+    expect(gateway.interactiveSent[1]?.body).toBe(
+      '¿Tu finca está registrada como persona natural o jurídica?',
+    );
+  });
+
   // ── Defecto de identidad de chat (hashed-zooming-flame.md, Tarea 1) ────
   //
   // Al registrar se hashea el celular en E.164 ("+573001234567"); al
