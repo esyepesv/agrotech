@@ -200,7 +200,9 @@ export function parseVerifyOtpInput(rawBody: unknown): VerifyOtpInput | undefine
   if (!parsed.success) {
     return undefined;
   }
-  const destinationKind: OtpDestinationKind = parsed.data.destination.includes('@') ? 'email' : 'phone';
+  const destinationKind: OtpDestinationKind = parsed.data.destination.includes('@')
+    ? 'email'
+    : 'phone';
   return {
     destination: normalizeDestination(parsed.data.destination, destinationKind),
     code: parsed.data.code,
@@ -428,9 +430,7 @@ async function handleCheckAvailability(
 
   const existing =
     'email' in parsed.data
-      ? await deps.farmRepository.findUserByEmail(
-          normalizeDestination(parsed.data.email, 'email'),
-        )
+      ? await deps.farmRepository.findUserByEmail(normalizeDestination(parsed.data.email, 'email'))
       : await deps.farmRepository.findUserByIdentification(
           parsed.data.identificationType,
           parsed.data.identificationNumber,

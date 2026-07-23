@@ -101,7 +101,11 @@ async function handleAccountRequestOtp(
       deps.registration.hashUserId,
     )
   ) {
-    return errorResponse(403, 'destination_mismatch', 'Ese celular o correo no pertenece a tu cuenta.');
+    return errorResponse(
+      403,
+      'destination_mismatch',
+      'Ese celular o correo no pertenece a tu cuenta.',
+    );
   }
 
   return requestOtpResponse(deps.registration, limiter, input);
@@ -127,7 +131,10 @@ async function handleAccountVerifyOtp(
     code: input.code,
   });
   if (outcome.ok) {
-    return { status: 200, body: { verified: true, destinationKind: outcome.value.destinationKind } };
+    return {
+      status: 200,
+      body: { verified: true, destinationKind: outcome.value.destinationKind },
+    };
   }
 
   switch (outcome.error.kind) {

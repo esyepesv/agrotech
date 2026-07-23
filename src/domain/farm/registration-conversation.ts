@@ -547,7 +547,11 @@ export function promptFor(
     case 'correctPick':
       return { text: '¿Qué dato quieres corregir?', options, layout };
     case 'cancelConfirm':
-      return { text: '¿Seguro que quieres cancelar el registro? Se perderá lo que llevamos.', options, layout };
+      return {
+        text: '¿Seguro que quieres cancelar el registro? Se perderá lo que llevamos.',
+        options,
+        layout,
+      };
     case 'anotherFarmPrompt':
       return {
         text: 'Ya tienes una cuenta registrada. ¿Quieres registrar otra finca?',

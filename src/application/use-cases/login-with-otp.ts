@@ -64,13 +64,19 @@ export class LoginWithOtp {
     // el status ni la forma de la respuesta revelan si el identificador está
     // registrado; tampoco se expone correo alguno de una persona real.
     return ok({
-      destinations: user === null ? GENERIC_DESTINATIONS : [{ kind: 'email', masked: maskEmail(user.email) }],
+      destinations:
+        user === null ? GENERIC_DESTINATIONS : [{ kind: 'email', masked: maskEmail(user.email) }],
     });
   }
 
   async verify(
     input: LoginVerifyInput,
-  ): Promise<Result<{ session: { token: string; expiresInSeconds: number }; farms: readonly LoginFarm[] }, LoginWithOtpError>> {
+  ): Promise<
+    Result<
+      { session: { token: string; expiresInSeconds: number }; farms: readonly LoginFarm[] },
+      LoginWithOtpError
+    >
+  > {
     const user = await this.findUser(input.identifier);
     if (user === null) {
       return err(INVALID_CREDENTIALS);

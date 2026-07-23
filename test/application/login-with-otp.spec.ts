@@ -49,7 +49,13 @@ describe('LoginWithOtp', () => {
 
     await otpStore.saveCode(
       { destination: 'juan@finca.co' },
-      { destinationKind: 'email', transport: 'email', codeHash: '123456', ttlSeconds: 300, maxAttempts: 5 },
+      {
+        destinationKind: 'email',
+        transport: 'email',
+        codeHash: '123456',
+        ttlSeconds: 300,
+        maxAttempts: 5,
+      },
     );
   });
 
