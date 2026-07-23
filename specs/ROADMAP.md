@@ -17,6 +17,7 @@
 | 009 | `cria-individual` | Cría por cerda: días abiertos, partos/año, onboarding progresivo de cerdas (Corte 3 de v1.1) | — | Pendiente |
 | 010 | `plan-sanitario-read-back` | Recordatorios de plan sanitario validado (`remind_from_plan`) + suite de seguridad (Corte 4 de v1.1) | `SanitaryPlanProvider` real | Pendiente |
 | 011 | `proactividad-read-api` | Push saliente (plantillas WhatsApp aprobadas) + `read-api/` de solo lectura para dashboard | Puerto `Scheduler`; `ReminderPolicy` (dominio) | Pendiente (futuro) |
+| 012 | [`web-entry-splash-bienvenida`](012-web-entry-splash-bienvenida.md) | Entrada de `app/`: splash de marca + pantalla de bienvenida que separa "iniciar sesión" de "registrarme" (hoy cae directo al wizard de registro) | — (frontend puro, reutiliza `LoginPage` y el wizard existentes) | Aprobado — implementado |
 
 ## Notas de secuencia
 
