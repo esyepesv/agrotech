@@ -104,7 +104,7 @@ El principio: **si el canal ya prueba de qué número escribe la persona, ese n�
 - **Números dictados:** capacidades y cantidades pasan por una normalización de dominio (función pura, testeable) que convierte numerales en palabras a dígitos ("doscientos cincuenta" → 250). Si no se puede normalizar con certeza, se re-pregunta con un ejemplo concreto en vez de adivinar.
 - **Identificaciones dictadas:** cédula, NIT y registro sanitario se **leen de vuelta dígito por dígito** ("uno–cero–tres–dos–cuatro…") pidiendo confirmación antes de avanzar. Son los campos donde un error de transcripción es más caro y menos visible.
 - **Transcripción de baja confianza o vacía:** no se guarda nada; se pide repetir el audio o escribir el dato.
-- **Correo por voz:** no se dicta. Si el usuario elige `[Escribirlo]` se le pide teclearlo; si manda audio para ese campo, el bot lo explica y vuelve a ofrecer los botones.
+- ~~**Correo por voz:** no se dicta.~~ **Revertido por el spec 013 (2026-07-23):** el correo **sí** se puede dictar diciendo "arroba" y "punto"; se normaliza y se lee de vuelta para confirmar antes de guardarlo, igual que la cédula y el NIT. Escribirlo sigue funcionando sin confirmación extra.
 
 ### 4.2 Flujo web (wizard de `app/`, según `Registro.dc.html`)
 

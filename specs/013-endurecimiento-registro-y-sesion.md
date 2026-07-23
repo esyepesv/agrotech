@@ -1,6 +1,9 @@
 # Spec 013 — Endurecimiento del registro, la sesión y la navegación
 
-> **Estado:** implementado y desplegado (2026-07-23).
+> **Estado:** implementado (2026-07-23); ampliado el mismo día con §4.6–4.7
+> (respuestas dictadas y voz de salida). El frontend está en producción; el
+> backend queda pendiente de promover con `npx vercel --prod` — en esta rama
+> `git push` solo crea un preview.
 >
 > **Naturaleza distinta a los demás specs de este índice:** los otros se
 > escriben ANTES de implementar. Este documenta una **corrección de defectos**
@@ -149,7 +152,39 @@ correos en el query string de los registros de acceso, y lleva cuota por IP
   lectura es destructiva (`takePending`), así que no reponerlo obligaba a
   repetir el registro entero.
 
-### 4.6 Login con membresía pendiente
+### 4.6 Respuestas dictadas (agregado el 2026-07-23)
+
+Contestar por nota de voz vale en **todos** los pasos, igual que texto y
+botones. La voz siempre se transcribió bien; lo que fallaba era emparejar la
+frase con la pregunta, así que la regla es sobre el emparejamiento:
+
+- `matchOption` empareja además por **afirmación coloquial** (reutilizando
+  `parseShortReply`) y por **palabras distintivas** de cada etiqueta. Whisper
+  devuelve frases naturales con puntuación ("Soy dueño."), nunca la etiqueta
+  exacta; antes eso caía en "No reconocí esa opción" hasta que a los tres
+  intentos el flujo mandaba al usuario a la web.
+- **Ambiguo ⇒ se repregunta, nunca se adivina.** "cédula" no puede decidir
+  entre ciudadanía y extranjería. Al agregar opciones nuevas hay que
+  comprobar que cada una tenga alguna palabra que no comparta con las otras.
+- `normalizeSpokenNumber` toma el número aunque venga acompañado ("son 250
+  cerdos") o con el punto final que agrega Whisper ("50."). Con dos números
+  distintos no elige.
+- **El correo se dicta** ("juan arroba finca punto co") y se lee de vuelta
+  antes de guardarlo, como la cédula y el NIT — revierte spec 001 §4.1.3.
+  Escrito sigue sin confirmación extra.
+- "atrás" durante una lectura de vuelta vuelve a pedir ese mismo dato, y
+  corregir/retroceder descarta el valor pendiente para no dejar el flujo
+  dando vueltas.
+
+### 4.7 Voz de salida (TTS)
+
+ElevenLabs cuando `ELEVENLABS_API_KEY` está definida; TTS de OpenAI cuando
+falta. La elección vive en `buildSynthesizer` (`config/container.ts`). Se
+eligió opcional —y no obligatoria como en `main`— para que una credencial
+ausente apague una capacidad en vez de impedir el arranque, igual que los
+canales.
+
+### 4.8 Login con membresía pendiente
 
 `LoginWithOtp.verify` prefiere una membresía `activo`, pero si solo hay
 `pendiente` también emite sesión. Antes devolvía `invalid_credentials`, el

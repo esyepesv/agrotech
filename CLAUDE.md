@@ -32,7 +32,8 @@ Backend de **PorcIA**, asistente porcícola para pequeños/medianos productores 
 
 - **Local:** servidor Fastify (`src/interfaces/http/server.ts`), rutas `/webhook/*`, `/health` y `/leads`. `npm run dev`.
 - **Producción:** funciones serverless de Vercel en `api/` (`api/webhook/whatsapp.ts`, `api/webhook/telegram.ts`, `api/health.ts`, `api/leads.ts`) sobre el runtime memoizado `src/interfaces/serverless/runtime.ts`. Las rutas llevan prefijo `/api/*`. Ambas superficies llaman a los mismos casos de uso — nunca duplicar lógica entre ellas.
-- LLM de generación vía OpenRouter (`LLM_BASE_URL`/`LLM_MODEL`); STT (Whisper), TTS y embeddings directo a OpenAI (`OPENAI_API_KEY`). Se registran **todos** los canales cuyas credenciales estén presentes (WhatsApp + Telegram simultáneos).
+- LLM de generación vía OpenRouter (`LLM_BASE_URL`/`LLM_MODEL`); STT (Whisper) y embeddings directo a OpenAI (`OPENAI_API_KEY`). Se registran **todos** los canales cuyas credenciales estén presentes (WhatsApp + Telegram simultáneos).
+- **Voz del bot (TTS):** ElevenLabs si `ELEVENLABS_API_KEY` está definida; si falta, cae al TTS de OpenAI (`TTS_MODEL`/`TTS_VOICE`). La elección vive en `buildSynthesizer` (`config/container.ts`), no repetida en cada sitio. Mismo criterio que los canales: una credencial ausente apaga una capacidad, nunca tumba el arranque.
 
 ## Contrato HTTP vigente (spec 001 §4.2 + spec 013)
 
@@ -55,6 +56,15 @@ Rutas locales (Fastify) sin prefijo; en Vercel llevan `/api`. Todos los errores 
 - No hay usuarios reales registrados: cambios de contrato de dominio de v1.1 (p. ej. renombrar roles) son de bajo riesgo todavía.
 - WhatsApp no permite iniciar conversaciones fuera de la ventana de 24 h sin plantillas pre-aprobadas — ninguna feature puede depender de push saliente (ver `arquitectura-v1.2.md` §9).
 - Identidad por `channel_user_hash` = HMAC-SHA256 con `USER_ID_SALT` (`src/infrastructure/security/user-id-hash.ts`). Reutilizar siempre ese mecanismo; nunca guardar teléfonos en claro salvo donde el spec lo defina (OTP, corta vida).
+
+## Respuestas por voz en el registro (no volver a romper)
+
+Contestar el registro por nota de voz debe funcionar igual que por texto o botón. Lo que lo hacía fallar no era la transcripción sino el emparejamiento, así que:
+
+- `matchOption` (`domain/message/reply-option.ts`) empareja, además de por id/número/ordinal/etiqueta, por **afirmación coloquial** (reutiliza `parseShortReply`) y por **palabras distintivas** de cada etiqueta. Whisper devuelve frases naturales con puntuación ("Soy dueño."), no la etiqueta exacta.
+- **Ante una respuesta ambigua se repregunta, no se adivina**: "cédula" no puede elegir sola entre ciudadanía y extranjería. Si se agregan opciones nuevas, revisar que cada una tenga al menos una palabra que no comparta con las demás.
+- `normalizeSpokenNumber` acepta el número aunque venga con palabras alrededor o con el punto final que agrega Whisper.
+- El correo **sí** se dicta ("arroba", "punto") y se lee de vuelta antes de guardarlo, igual que cédula y NIT. Esto revierte la regla de spec 001 §4.1.3.
 
 ## Guardrails de seguridad (no diluir)
 
