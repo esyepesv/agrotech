@@ -26,6 +26,8 @@ import { JwtSessionIssuer } from '../infrastructure/security/jwt-session-issuer.
 import type { ChannelGateway } from '../application/ports/channel-gateway.js';
 import type { MessageDeduplicator } from '../application/ports/message-deduplicator.js';
 import { WhisperTranscriber } from '../infrastructure/speech/whisper-transcriber.js';
+import type { SpeechSynthesizer } from '../application/ports/speech-synthesizer.js';
+import { ElevenLabsTtsSynthesizer } from '../infrastructure/speech/elevenlabs-tts-synthesizer.js';
 import { TtsSynthesizer } from '../infrastructure/speech/tts-synthesizer.js';
 import { LlmAnswerGenerator } from '../infrastructure/llm/llm-answer-generator.js';
 import { LlmEmbedder } from '../infrastructure/llm/llm-embedder.js';
@@ -86,7 +88,7 @@ export function buildContainer(env: Env, logger: Logger): Container {
 
   const answerQuery = new AnswerQuery({
     transcriber: new WhisperTranscriber(openai, env.STT_MODEL),
-    synthesizer: new TtsSynthesizer(openai, env.TTS_MODEL, env.TTS_VOICE),
+    synthesizer: buildSynthesizer(env, openai),
     retriever: new PgVectorRetriever(supabase, embedder),
     generator: new LlmAnswerGenerator(openrouter, env.LLM_MODEL),
     safetyPolicy: new RuleBasedSafetyPolicy(),
@@ -249,7 +251,7 @@ export function buildContainer(env: Env, logger: Logger): Container {
     farmRepository,
     pendingEventStore,
     transcriber: new WhisperTranscriber(openai, env.STT_MODEL),
-    synthesizer: new TtsSynthesizer(openai, env.TTS_MODEL, env.TTS_VOICE),
+    synthesizer: buildSynthesizer(env, openai),
     conversationLog: new SupabaseConversationLog(supabase, env.USER_ID_SALT),
     hashUserId: (channelUserId) => hashUserId(channelUserId, env.USER_ID_SALT),
     linkChatIdentity,
@@ -274,6 +276,25 @@ export function buildContainer(env: Env, logger: Logger): Container {
  * que se resuelve por canal y se pasa al caso de uso en la invocación.
  * Cada gateway se construye una vez (lazy) y se reutiliza.
  */
+/**
+ * Voz del bot: ElevenLabs cuando hay llave, TTS de OpenAI cuando no. Mismo
+ * criterio que los canales (una credencial ausente apaga una capacidad, no
+ * tumba el arranque), así que se puede desplegar antes de cargar la llave en
+ * Vercel sin dejar al bot mudo. Ambas implementan `SpeechSynthesizer`, de
+ * modo que ningún caso de uso sabe cuál está detrás.
+ */
+export function buildSynthesizer(env: Env, openai: OpenAI): SpeechSynthesizer {
+  if (env.ELEVENLABS_API_KEY === undefined) {
+    return new TtsSynthesizer(openai, env.TTS_MODEL, env.TTS_VOICE);
+  }
+  return new ElevenLabsTtsSynthesizer(
+    env.ELEVENLABS_API_KEY,
+    env.ELEVENLABS_VOICE_ID,
+    env.ELEVENLABS_MODEL,
+    env.ELEVENLABS_OUTPUT_FORMAT,
+  );
+}
+
 function buildGatewayResolver(env: Env): (channel: Channel) => ChannelGateway {
   const cache = new Map<Channel, ChannelGateway>();
 
