@@ -239,7 +239,11 @@ export function buildContainer(env: Env, logger: Logger): Container {
     clock,
     corsAllowedOrigins: env.CORS_ALLOWED_ORIGINS,
   };
-  const linkChatIdentity = new LinkChatIdentity({ farmRepository, hashUserId: hashUserIdWithSalt, clock });
+  const linkChatIdentity = new LinkChatIdentity({
+    farmRepository,
+    hashUserId: hashUserIdWithSalt,
+    clock,
+  });
 
   const handleIncomingMessage = new HandleIncomingMessage({
     answerQuery,

@@ -48,7 +48,7 @@ Rutas locales (Fastify) sin prefijo; en Vercel llevan `/api`. Todos los errores 
 
 ## Estado operativo a tener en cuenta
 
-- Migraciones en `supabase/migrations/` son idempotentes y se aplican **manualmente** (nunca solas). `0001`–`0006` y `0009_landing_lead.sql` están **aplicadas en producción**. Toda migración nueva nace pendiente: verificar antes de asumir que una tabla existe.
+- Migraciones en `supabase/migrations/` son idempotentes y se aplican **manualmente** (nunca solas). **`0001`–`0009` están todas aplicadas en producción** (verificado el 2026-07-23). Toda migración nueva nace pendiente: verificar antes de asumir que una tabla existe. Truco para comprobarlo sin escribir nada: `GET $SUPABASE_URL/rest/v1/` devuelve el OpenAPI con las columnas y los enums reales.
 - **Despliegue a producción: NO ocurre con `git push`.** La rama de trabajo (`feat/v1.2-spec-001-registro`) no es la de producción del proyecto Vercel `agrotech`, así que empujar solo crea un *preview*. Producción se promueve a mano con `npx vercel --prod` desde `backend/`. Verificarlo siempre después de desplegar (p. ej. `GET /api/account/me` debe dar 401, no 405).
 - **La base se vació el 2026-07-23** para probar desde cero: `app_user`, `farm`, `operator`, `worker_invitation`, `otp_code`, `pending_event` y `processed_message` quedaron en 0. `knowledge_chunk` (36 filas, corpus del RAG) y `landing_lead` se conservaron intactos.
 - Los contactos de `porcia-web` entran por `POST /api/leads`: conservar la idempotencia, el rate limit y la tabla `landing_lead` con RLS (solo `service_role` inserta). El aviso SMTP va a `LEAD_NOTIFICATION_TO`.

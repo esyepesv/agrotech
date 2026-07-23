@@ -1,3 +1,7 @@
+-- APLICADA EN PRODUCCIÓN (verificado el 2026-07-23 contra el esquema que
+-- expone PostgREST: el enum public.identification_type existe con sus 6
+-- valores). Faltaba la cabecera, no la migración.
+--
 -- Tipos de documento admitidos por PorcIA. Es un conjunto pequeño y estable,
 -- por eso se modela como enum de PostgreSQL en vez de texto con un CHECK.
 -- Código de pasaporte: PA (se conserva por compatibilidad con el contrato v1.2).
