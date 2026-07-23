@@ -4,6 +4,8 @@ import {
   clearStepField,
   correctableSteps,
   nextStep,
+  normalizeSpokenEmail,
+  normalizeSpokenNumber,
   optionsForStep,
   parseGlobalCommand,
   previousStep,
@@ -103,6 +105,76 @@ describe('registration-conversation — correo obligatorio (tarea 3)', () => {
       email: 'juan@finca.co',
     };
     expect(summaryOf(partial)).toContain('juan@finca.co');
+  });
+});
+
+describe('registration-conversation — respuestas dictadas por voz', () => {
+  const porVoz = { inputWasVoice: true };
+
+  it('entiende cantidades dictadas con palabras alrededor o puntuación', () => {
+    // Whisper casi siempre agrega el punto final; antes eso solo ya fallaba.
+    for (const [frase, esperado] of [
+      ['250', 250],
+      ['50.', 50],
+      ['son 250', 250],
+      ['250 cerdos', 250],
+      ['doscientos cincuenta', 250],
+      ['doscientos cincuenta cerdos', 250],
+      ['como unos cincuenta', 50],
+    ] as const) {
+      expect(normalizeSpokenNumber(frase), frase).toBe(esperado);
+    }
+  });
+
+  it('no inventa una cantidad si no hay número, ni elige entre dos', () => {
+    expect(normalizeSpokenNumber('no sé cuántos')).toBeUndefined();
+    expect(normalizeSpokenNumber('')).toBeUndefined();
+    expect(normalizeSpokenNumber('entre 20 y 30')).toBeUndefined();
+  });
+
+  it('convierte un correo dictado en su forma escrita', () => {
+    expect(normalizeSpokenEmail('juan arroba gmail punto com')).toBe('juan@gmail.com');
+    expect(normalizeSpokenEmail('Ana punto Ruiz arroba finca punto co')).toBe('ana.ruiz@finca.co');
+    expect(normalizeSpokenEmail('juan guion bajo perez arroba mail punto com')).toBe(
+      'juan_perez@mail.com',
+    );
+  });
+
+  it('el correo dictado se lee de vuelta antes de guardarlo', () => {
+    const result = applyAnswer(
+      { role: 'administrador_dueno' },
+      'email',
+      'juan arroba finca punto co',
+      porVoz,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Todavía NO se guarda: primero se confirma.
+    expect(result.value.email).toBeUndefined();
+    expect(result.value.pendingReadback).toEqual({ field: 'email', value: 'juan@finca.co' });
+    expect(nextStep(result.value)).toBe('emailConfirm');
+
+    const confirmado = applyAnswer(result.value, 'emailConfirm', 'reg:emailConfirm:yes');
+    expect(confirmado.ok).toBe(true);
+    if (!confirmado.ok) return;
+    expect(confirmado.value.email).toBe('juan@finca.co');
+    expect(confirmado.value.pendingReadback).toBeUndefined();
+  });
+
+  it('un correo dictado que no se entiende se vuelve a preguntar, no se guarda', () => {
+    const result = applyAnswer({ role: 'administrador_dueno' }, 'email', 'no sé', porVoz);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.resetToStep).toBe('email');
+  });
+
+  it('escrito sigue funcionando igual: sin lectura de vuelta', () => {
+    const result = applyAnswer({ role: 'administrador_dueno' }, 'email', '  Juan@Finca.CO ');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.email).toBe('juan@finca.co');
+    expect(result.value.pendingReadback).toBeUndefined();
   });
 });
 

@@ -379,3 +379,57 @@ describe('matchOption', () => {
     expect(matchOption('', options)).toBeUndefined();
   });
 });
+
+describe('matchOption con respuestas dictadas', () => {
+  // Whisper devuelve frases naturales con puntuación, no la etiqueta exacta.
+  const roleOptions: ReplyOption[] = [
+    { id: optionId('role', 'administrador_dueno'), label: 'Soy dueño o administrador' },
+    { id: optionId('role', 'trabajador'), label: 'Soy trabajador' },
+  ];
+  const idTypeOptions: ReplyOption[] = [
+    { id: optionId('idType', 'TI'), label: 'Tarjeta de Identidad' },
+    { id: optionId('idType', 'CC'), label: 'Cédula de Ciudadanía' },
+    { id: optionId('idType', 'CE'), label: 'Cédula de Extranjería' },
+  ];
+  const confirmOptions: ReplyOption[] = [
+    { id: optionId('confirm', 'confirm'), label: 'Sí, confirmar' },
+    { id: optionId('confirm', 'correct'), label: 'Corregir' },
+    { id: optionId('confirm', 'cancel'), label: 'Cancelar' },
+  ];
+
+  it('reconoce el rol dicho como frase completa', () => {
+    for (const frase of ['Soy dueño.', 'soy el dueño', 'yo soy dueño de la finca', 'dueño']) {
+      expect(matchOption(frase, roleOptions), frase).toBe(roleOptions[0]);
+    }
+    for (const frase of ['Soy trabajador.', 'yo trabajo ahí, soy trabajador']) {
+      expect(matchOption(frase, roleOptions), frase).toBe(roleOptions[1]);
+    }
+  });
+
+  it('reconoce confirmaciones coloquiales dictadas', () => {
+    for (const frase of ['sí, confirmo', 'está bien', 'dale', 'listo', 'correcto', 'perfecto']) {
+      expect(matchOption(frase, confirmOptions), frase).toBe(confirmOptions[0]);
+    }
+    for (const frase of ['no', 'cancelar', 'mejor no']) {
+      expect(matchOption(frase, confirmOptions), frase).toBe(confirmOptions[2]);
+    }
+  });
+
+  it('NO adivina cuando la palabra dictada señala a varias opciones', () => {
+    // "cédula" está en ciudadanía y en extranjería: antes elegía la primera
+    // en silencio, guardando un tipo de documento equivocado.
+    expect(matchOption('cédula', idTypeOptions)).toBeUndefined();
+    expect(matchOption('mi cédula', idTypeOptions)).toBeUndefined();
+  });
+
+  it('sí resuelve el documento cuando la frase trae la palabra que lo distingue', () => {
+    expect(matchOption('cédula de ciudadanía', idTypeOptions)).toBe(idTypeOptions[1]);
+    expect(matchOption('es mi cédula de extranjería', idTypeOptions)).toBe(idTypeOptions[2]);
+    expect(matchOption('la tarjeta de identidad', idTypeOptions)).toBe(idTypeOptions[0]);
+  });
+
+  it('no inventa una opción con una frase sin relación', () => {
+    expect(matchOption('no sé qué decir', roleOptions)).toBeUndefined();
+    expect(matchOption('mañana te cuento', idTypeOptions)).toBeUndefined();
+  });
+});

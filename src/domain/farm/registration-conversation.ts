@@ -29,6 +29,7 @@ export type RegistrationStep =
   | 'idNumber'
   | 'idNumberConfirm'
   | 'email'
+  | 'emailConfirm'
   | 'workerFarmSearch'
   | 'workerFarmPick'
   | 'confirm'
@@ -40,6 +41,9 @@ export type RegistrationStep =
   | 'cancelConfirm'
   | 'anotherFarmPrompt'
   | 'approveWorker';
+
+/** Campos que se leen de vuelta cuando llegan dictados, antes de guardarlos. */
+export type ReadbackField = 'taxId' | 'idNumber' | 'sanitaryRegistry' | 'email';
 
 // Representación de un resultado de búsqueda de finca segura de importar
 // desde `domain/` (no `FarmSearchResult` de `application/ports/farm-repository.ts`
@@ -95,7 +99,7 @@ export interface RegistrationPartial {
   // Lectura dígito por dígito (§4.1.3): valor dictado a la espera de
   // confirmación antes de escribirlo en el campo real.
   readonly pendingReadback?: {
-    readonly field: 'taxId' | 'idNumber' | 'sanitaryRegistry';
+    readonly field: ReadbackField;
     readonly value: string;
   };
 
@@ -227,6 +231,7 @@ export function optionsForStep(
     case 'taxIdConfirm':
     case 'idNumberConfirm':
     case 'sanitaryRegistryConfirm':
+    case 'emailConfirm':
       return confirmValueOptions(step);
     case 'workerFarmPick':
       return workerFarmPickOptions(partial.workerFarmResults ?? []);
@@ -291,6 +296,10 @@ export function clearStepField(
   partial: RegistrationPartial,
   step: RegistrationStep,
 ): RegistrationPartial {
+  // Retroceder o corregir siempre invalida un valor pendiente de confirmar:
+  // si no se descartara, `nextStep` volvería a la lectura de vuelta y el
+  // flujo quedaría dando vueltas sobre el dato que se quería cambiar.
+  partial = { ...partial, pendingReadback: undefined };
   switch (step) {
     case 'role':
       return { ...partial, role: undefined };
@@ -343,6 +352,13 @@ export function previousStep(
   step: RegistrationStep,
   partial: RegistrationPartial,
 ): RegistrationStep | undefined {
+  // Durante una lectura de vuelta ("entendí 1032456789, ¿es correcto?"),
+  // "atrás" significa descartar lo que se entendió y volver a dictar ese
+  // mismo dato — no retroceder al campo anterior.
+  const readback = partial.pendingReadback;
+  if (readback !== undefined && step === `${readback.field}Confirm`) {
+    return readback.field;
+  }
   const order = stepOrder(partial);
   const index = step === 'confirm' ? order.length : order.indexOf(step);
   if (index <= 0) {
@@ -537,7 +553,17 @@ export function promptFor(
     case 'idNumberConfirm':
       return { text: readbackPrompt(partial.pendingReadback?.value ?? ''), options, layout };
     case 'email':
-      return { text: 'Escribe tu correo electrónico. Te sirve para entrar desde el computador.' };
+      return {
+        text: 'Dime tu correo electrónico (puedes escribirlo o dictarlo diciendo "arroba" y "punto"). Te sirve para entrar desde el computador.',
+      };
+    case 'emailConfirm':
+      return {
+        // El correo se lee tal cual, no deletreado: "juan@finca.co" dicho
+        // dígito por dígito sería ilegible.
+        text: `Entendí el correo ${partial.pendingReadback?.value ?? ''}. ¿Es correcto?`,
+        options,
+        layout,
+      };
     case 'workerFarmSearch':
       return { text: '¿Cómo se llama la finca a la que perteneces?' };
     case 'workerFarmPick':
@@ -686,6 +712,8 @@ export function applyAnswer(
       return applyReadbackConfirm(partial, 'idNumber', step, rawInput);
     case 'email':
       return applyEmail(partial, rawInput, opts);
+    case 'emailConfirm':
+      return applyReadbackConfirm(partial, 'email', step, rawInput);
     case 'workerFarmSearch':
       return applyFreeText(
         partial,
@@ -787,7 +815,7 @@ function applyCapacity(
 
 function applyDigitField(
   partial: RegistrationPartial,
-  field: 'taxId' | 'idNumber' | 'sanitaryRegistry',
+  field: ReadbackField,
   rawInput: string,
   opts: ApplyAnswerOptions,
 ): Result<RegistrationPartial, RegistrationAnswerError> {
@@ -805,7 +833,7 @@ function applyDigitField(
 
 function applyReadbackConfirm(
   partial: RegistrationPartial,
-  field: 'taxId' | 'idNumber' | 'sanitaryRegistry',
+  field: ReadbackField,
   step: RegistrationStep,
   rawInput: string,
 ): Result<RegistrationPartial, RegistrationAnswerError> {
@@ -825,23 +853,51 @@ function applyReadbackConfirm(
   return ok({ ...partial, [field]: pending.value, pendingReadback: undefined });
 }
 
+/**
+ * Palabras que la gente dicta en lugar de los símbolos. Whisper además mete
+ * espacios entre letras deletreadas, así que se quitan todos al final.
+ */
+const SPOKEN_EMAIL_SYMBOLS: readonly (readonly [RegExp, string])[] = [
+  [/\barrobas?\b/g, '@'],
+  [/\bat\b/g, '@'],
+  [/\bguion bajo\b/g, '_'],
+  [/\bguion medio\b/g, '-'],
+  [/\bguion\b/g, '-'],
+  [/\bpunto\b/g, '.'],
+  [/\bpuntos?\b/g, '.'],
+];
+
+/** "juan arroba gmail punto com" → "juan@gmail.com". */
+export function normalizeSpokenEmail(raw: string): string {
+  const withSymbols = SPOKEN_EMAIL_SYMBOLS.reduce(
+    (text, [pattern, symbol]) => text.replace(pattern, symbol),
+    raw.toLowerCase(),
+  );
+  return withSymbols.replace(/\s+/g, '').replace(/,$/, '').replace(/\.$/, '');
+}
+
 function applyEmail(
   partial: RegistrationPartial,
   rawInput: string,
   opts: ApplyAnswerOptions,
 ): Result<RegistrationPartial, RegistrationAnswerError> {
-  if (opts.inputWasVoice) {
-    // §4.1.3: el correo no se dicta, se escribe.
+  // Misma normalización que el resto del dominio (registration.ts): minúsculas
+  // sin espacios, para no tener dos criterios de "correo válido" divergentes.
+  const normalized = opts.inputWasVoice
+    ? normalizeSpokenEmail(rawInput)
+    : normalizeDestination(rawInput, 'email');
+  if (!isValidEmail(normalized)) {
     return err({
-      message: 'El correo no se puede dictar por voz. Escríbelo, por favor.',
+      message: opts.inputWasVoice
+        ? 'No entendí bien el correo. Dilo otra vez diciendo "arroba" y "punto", o escríbelo.'
+        : 'Ese correo no parece válido. ¿Me lo escribes otra vez?',
       resetToStep: 'email',
     });
   }
-  // Misma normalización que el resto del dominio (registration.ts): minúsculas
-  // sin espacios, para no tener dos criterios de "correo válido" divergentes.
-  const normalized = normalizeDestination(rawInput, 'email');
-  if (!isValidEmail(normalized)) {
-    return err({ message: 'Ese correo no parece válido. ¿Me lo escribes otra vez?' });
+  if (opts.inputWasVoice) {
+    // Dictar un correo es donde más se equivoca la transcripción: se lee de
+    // vuelta para confirmar antes de guardarlo, igual que cédula y NIT.
+    return ok({ ...partial, pendingReadback: { field: 'email', value: normalized } });
   }
   return ok({ ...partial, email: normalized });
 }
@@ -989,6 +1045,15 @@ export function normalizeSpokenNumber(raw: string): number | undefined {
     return Number(trimmed);
   }
 
+  // Dictado real: Whisper devuelve "50." o "son 250 cerdos", no un número
+  // pelado. Si hay dígitos, mandan ellos — antes cualquier palabra alrededor
+  // (incluso el punto final) hacía fallar el paso entero. Con varios números
+  // no se adivina cuál es.
+  const digits = trimmed.match(/\d+/g);
+  if (digits !== null) {
+    return digits.length === 1 ? Number(digits[0]) : undefined;
+  }
+
   const tokens = normalizeNumberText(trimmed)
     .split(' ')
     .filter((t) => t.length > 0 && t !== 'y');
@@ -996,9 +1061,24 @@ export function normalizeSpokenNumber(raw: string): number | undefined {
     return undefined;
   }
 
+  // Se suma la racha más larga de palabras-número y se ignora lo que venga
+  // alrededor ("doscientos cincuenta cerdos"). Una palabra desconocida cierra
+  // la racha en vez de descartar la respuesta entera.
+  let best: number | undefined;
   let total = 0;
   let current = 0;
   let matchedAny = false;
+
+  const closeRun = (): void => {
+    if (matchedAny) {
+      const value = total + current;
+      best = best === undefined ? value : Math.max(best, value);
+    }
+    total = 0;
+    current = 0;
+    matchedAny = false;
+  };
+
   for (const token of tokens) {
     if (token === 'mil') {
       total += (current === 0 ? 1 : current) * 1000;
@@ -1024,9 +1104,10 @@ export function normalizeSpokenNumber(raw: string): number | undefined {
       matchedAny = true;
       continue;
     }
-    return undefined;
+    closeRun();
   }
-  return matchedAny ? total + current : undefined;
+  closeRun();
+  return best;
 }
 
 function unreachable(value: never): never {

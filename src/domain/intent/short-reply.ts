@@ -20,6 +20,18 @@ const CONFIRM_PHRASES = new Set([
   'hagale',
   'claro',
   'asi es',
+  // Añadidas al habilitar la respuesta por voz: son las formas que más
+  // aparecen dictadas y que antes caían en "no reconocí esa opción".
+  'esta bien',
+  'esta correcto',
+  'si confirmo',
+  'si esta bien',
+  'si claro',
+  'si senor',
+  'exacto',
+  'perfecto',
+  'eso es',
+  'sip',
 ]);
 
 const CANCEL_PHRASES = new Set([
@@ -34,6 +46,13 @@ const CANCEL_PHRASES = new Set([
   'despues',
   'luego',
   'ahora no',
+  'nop',
+  'para nada',
+  'mejor no',
+  'esta mal',
+  'no esta bien',
+  'corrige',
+  'corregir',
 ]);
 
 const MAX_WORDS = 4;

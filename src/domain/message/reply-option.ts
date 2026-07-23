@@ -1,4 +1,5 @@
 import type { Channel } from './incoming-message.js';
+import { parseShortReply } from '../intent/short-reply.js';
 
 /**
  * Opción de respuesta cerrada (botón o fila de lista). El id es namespaced
@@ -140,19 +141,133 @@ export function matchOption(
     }
   }
 
-  for (const option of options) {
-    const normalizedLabel = normalizeText(option.label);
-    if (normalizedLabel === normalized) {
-      return option;
-    }
-    const labelWords = normalizedLabel.split(' ');
-    if (labelWords.includes(normalized) || labelWords[0] === normalized) {
-      return option;
-    }
+  const exactLabel = options.find((option) => normalizeText(option.label) === normalized);
+  if (exactLabel !== undefined) {
+    return exactLabel;
   }
 
-  return undefined;
+  // Una palabra suelta solo decide si señala a UNA opción. Antes se devolvía
+  // la primera que la contuviera, así que "cédula" elegía en silencio entre
+  // cédula de ciudadanía y de extranjería.
+  const byWord = options.filter((option) => {
+    const labelWords = normalizeText(option.label).split(' ');
+    return labelWords.includes(normalized) || labelWords[0] === normalized;
+  });
+  if (byWord.length === 1) {
+    return byWord[0];
+  }
+
+  return matchAffirmation(normalized, options) ?? matchByDistinctiveWords(tokens, options);
 }
+
+/**
+ * "dale", "listo", "está bien", "para nada"… en opciones de sí/no. Reutiliza
+ * el vocabulario de `parseShortReply` (el mismo atajo determinista del router
+ * de v1.1) en vez de mantener una segunda lista de sinónimos; la convención
+ * de ids `reg:<paso>:<valor>` dice cuál opción es la afirmativa.
+ */
+function matchAffirmation(
+  normalized: string,
+  options: readonly ReplyOption[],
+): ReplyOption | undefined {
+  const reply = parseShortReply(normalized);
+  if (reply === undefined) {
+    return undefined;
+  }
+  const wanted = reply === 'confirm' ? AFFIRMATIVE_VALUES : NEGATIVE_VALUES;
+  const matches = options.filter((option) => {
+    const value = parseOptionId(option.id)?.value;
+    return value !== undefined && wanted.has(value);
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/**
+ * Gana la opción con más palabras **distintivas** presentes en lo dictado.
+ * Distintiva = aparece en una sola etiqueta: así "soy" no decide nada entre
+ * "Soy dueño o administrador" y "Soy trabajador", pero "dueño" sí. Si nada
+ * puntúa o hay empate, no se adivina.
+ */
+function matchByDistinctiveWords(
+  tokens: readonly string[],
+  options: readonly ReplyOption[],
+): ReplyOption | undefined {
+  const wordsPerOption = options.map(
+    (option) => new Set(normalizeText(option.label).split(' ').filter(isMeaningfulWord)),
+  );
+
+  const distinctive = wordsPerOption.map(
+    (words, index) =>
+      new Set(
+        [...words].filter((word) =>
+          wordsPerOption.every((other, otherIndex) => otherIndex === index || !other.has(word)),
+        ),
+      ),
+  );
+
+  const spoken = new Set(tokens);
+  const scores = distinctive.map((words) => [...words].filter((word) => spoken.has(word)).length);
+
+  const best = Math.max(...scores, 0);
+  if (best === 0) {
+    return undefined;
+  }
+  const winners = scores.reduce<number[]>(
+    (acc, score, index) => (score === best ? [...acc, index] : acc),
+    [],
+  );
+  return winners.length === 1 ? options[winners[0] as number] : undefined;
+}
+
+// Palabras que no distinguen nada por sí solas en español hablado. "sí" y
+// "no" quedan FUERA a propósito: son justo las que deciden en los pasos de
+// confirmación ("sí, confirmo").
+const FILLER_WORDS = new Set([
+  'soy',
+  'es',
+  'era',
+  'el',
+  'la',
+  'los',
+  'las',
+  'un',
+  'una',
+  'unos',
+  'unas',
+  'de',
+  'del',
+  'mi',
+  'mis',
+  'yo',
+  'me',
+  'quiero',
+  'por',
+  'favor',
+  'que',
+  'y',
+  'o',
+  'a',
+  'en',
+  'con',
+  'para',
+  'se',
+  'lo',
+  'le',
+  'esta',
+  'este',
+  'esa',
+  'ese',
+  'eso',
+  'mas',
+  'muy',
+]);
+
+function isMeaningfulWord(word: string): boolean {
+  return word.length > 1 && !FILLER_WORDS.has(word);
+}
+
+const AFFIRMATIVE_VALUES = new Set(['yes', 'confirm', 'aprobar']);
+const NEGATIVE_VALUES = new Set(['no', 'cancel', 'retry', 'rechazar']);
 
 function normalizeText(text: string): string {
   return text
