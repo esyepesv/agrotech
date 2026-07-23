@@ -46,6 +46,14 @@ const entityStubSchema = z.discriminatedUnion('entity', [
 const pendingDraftSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('farm_event'), draft: farmEventDraftSchema }),
   z.object({ kind: z.literal('register_entity'), entity: entityStubSchema }),
+  // El registro conversacional guarda un snapshot parcial que va creciendo
+  // paso a paso. No repetimos aquí sus campos (la máquina de registro es la
+  // fuente de verdad), pero sí validamos su envoltura antes de restaurarlo.
+  z.object({
+    kind: z.literal('register_farm_and_user'),
+    partial: z.object({}).passthrough(),
+    step: z.string().min(1),
+  }),
 ]);
 
 /**
@@ -109,7 +117,7 @@ export class SupabasePendingEventStore implements PendingEventStore {
     // La fila ya fue borrada por el delete de arriba (lee-y-borra atómico);
     // si el jsonb no parsea, ya no hay nada extra que limpiar (dato corrupto
     // no debe tumbar el flujo: se trata como "no hay pendiente").
-    return parseDraft((data as PendingEventRow).draft);
+    return parsePendingDraft((data as PendingEventRow).draft);
   }
 
   async hasPending(operatorId: OperatorId): Promise<boolean> {
@@ -127,7 +135,7 @@ export class SupabasePendingEventStore implements PendingEventStore {
   }
 }
 
-function parseDraft(raw: unknown): PendingDraft | null {
+export function parsePendingDraft(raw: unknown): PendingDraft | null {
   const parsed = pendingDraftSchema.safeParse(raw);
   if (!parsed.success) {
     return null;

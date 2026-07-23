@@ -23,6 +23,14 @@ const ownerPartialConFincaCompleta: RegistrationPartial = {
 };
 
 describe('registration-conversation — correo obligatorio (tarea 3)', () => {
+  it('nombra explícitamente al dueño o administrador en la opción de rol', () => {
+    expect(optionsForStep('role', {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Soy dueño o administrador' }),
+      ]),
+    );
+  });
+
   it('pide el correo al dueño y no ofrece saltarlo', () => {
     const partial: RegistrationPartial = {
       ...ownerPartialConFincaCompleta,

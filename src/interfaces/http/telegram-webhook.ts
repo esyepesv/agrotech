@@ -59,7 +59,11 @@ export function parseTelegramUpdate(body: unknown): IncomingMessage | undefined 
   if (callbackQuery !== undefined && callbackQuery.data !== undefined) {
     return {
       channel: 'telegram',
-      channelUserId: String(callbackQuery.from.id),
+      // Un callback pertenece al chat que contiene el teclado. Usar `from.id`
+      // hacía que, fuera de un chat privado, se buscara otro hash distinto al
+      // que guardó el borrador al recibir el mensaje inicial y el flujo se
+      // reiniciara en la pregunta de rol.
+      channelUserId: String(callbackQuery.message?.chat.id ?? callbackQuery.from.id),
       messageId: `tg:cb:${callbackQuery.id}`,
       type: 'text',
       text: callbackQuery.data,

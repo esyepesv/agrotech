@@ -130,7 +130,7 @@ export interface RegistrationAnswerError {
 // necesitar una tabla de mapeo aparte.
 
 const ROLE_OPTIONS: readonly ReplyOption[] = [
-  { id: optionId('role', 'administrador_dueno'), label: 'Soy dueño' },
+  { id: optionId('role', 'administrador_dueno'), label: 'Soy dueño o administrador' },
   { id: optionId('role', 'trabajador'), label: 'Soy trabajador' },
 ];
 

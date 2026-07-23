@@ -52,6 +52,27 @@ describe('parseTelegramUpdate', () => {
     expect(message?.audioRef).toEqual({ channel: 'telegram', mediaId: 'file-xyz' });
   });
 
+  it('un callback conserva el chat que originó el teclado para retomar su borrador', () => {
+    const message = parseTelegramUpdate({
+      update_id: 31,
+      callback_query: {
+        id: 'callback-31',
+        data: 'reg:role:administrador_dueno',
+        from: { id: 123 },
+        message: { message_id: 77, chat: { id: -100987 } },
+      },
+    });
+
+    expect(message).toMatchObject({
+      channel: 'telegram',
+      channelUserId: '-100987',
+      messageId: 'tg:cb:callback-31',
+      text: 'reg:role:administrador_dueno',
+      callbackQueryId: 'callback-31',
+      callbackMessageId: 77,
+    });
+  });
+
   it('payload inválido (sin schema esperado) devuelve undefined', () => {
     expect(parseTelegramUpdate({ foo: 'bar' })).toBeUndefined();
     expect(parseTelegramUpdate(null)).toBeUndefined();
