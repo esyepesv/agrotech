@@ -4,6 +4,9 @@ import type { FarmEventDraft, FeedDelivery } from '../../src/domain/farm/farm-ev
 import type { Operator } from '../../src/domain/farm/operator.js';
 import { channelIdentityValue } from '../../src/domain/message/channel-identity.js';
 import type { IncomingMessage } from '../../src/domain/message/incoming-message.js';
+import type { InteractiveGateway } from '../../src/application/ports/interactive-gateway.js';
+import type { InteractiveMessage } from '../../src/domain/message/reply-option.js';
+import { ok } from '../../src/domain/shared/result.js';
 import { AnswerQuery } from '../../src/application/use-cases/answer-query.js';
 import { ConfirmFarmEvent } from '../../src/application/use-cases/confirm-farm-event.js';
 import {
@@ -38,6 +41,19 @@ const MIN_RELEVANCE_SCORE = 0.35;
 const GENERATOR_ANSWER = 'Aliméntala a voluntad durante la lactancia, repartido en 2 o 3 comidas.';
 const HASH_PREFIX = 'hash-';
 const FARM_ID = 'farm-1';
+
+class FakeInteractiveChannelGateway extends FakeChannelGateway implements InteractiveGateway {
+  readonly interactiveSent: InteractiveMessage[] = [];
+
+  supportsInteractive(): boolean {
+    return true;
+  }
+
+  async sendInteractive(message: InteractiveMessage) {
+    this.interactiveSent.push(message);
+    return ok(undefined);
+  }
+}
 
 function hashUserId(channelUserId: string): string {
   return `${HASH_PREFIX}${channelUserId}`;
@@ -120,7 +136,7 @@ function idGenerator(): string {
   return `id-${idCounter}`;
 }
 
-function buildHarness() {
+function buildHarness(gateway: FakeChannelGateway = new FakeChannelGateway()) {
   const clock = new FakeClock();
   const farmRepository = new FakeFarmRepository();
   const inventoryRepository = new FakeInventoryRepository();
@@ -134,7 +150,6 @@ function buildHarness() {
   const conversationLog = new FakeConversationLog();
   const transcriber = new FakeTranscriber();
   const synthesizer = new FakeSpeechSynthesizer();
-  const gateway = new FakeChannelGateway();
 
   const answerQuery = new AnswerQuery({
     transcriber,
@@ -429,6 +444,25 @@ describe('HandleIncomingMessage', () => {
 
     expect(h.gateway.sent[1]?.text.toLowerCase()).toContain('finca');
     expect(await h.farmRepository.findOperatorByHash(chatHash('telegram', 'user-1'))).toBeNull();
+  });
+
+  it('saludo con registro pendiente repite el paso y vuelve a enviar sus botones', async () => {
+    const gateway = new FakeInteractiveChannelGateway();
+    const h = buildHarness(gateway);
+    const text = 'quiero registrarme';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+
+    await h.handler.handle(textMessage(text), gateway);
+    await h.handler.handle(textMessage('hola'), gateway);
+
+    expect(gateway.sent[1]?.text).toBe(
+      '¿Eres el dueño/administrador de la finca o trabajas en ella?',
+    );
+    expect(gateway.interactiveSent[1]?.options).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Soy dueño o administrador' }),
+      ]),
+    );
   });
 
   // ── Defecto de identidad de chat (hashed-zooming-flame.md, Tarea 1) ────

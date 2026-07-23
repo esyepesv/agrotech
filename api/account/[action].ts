@@ -6,7 +6,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   if (applyCors(req, res, getRegistrationConfig().corsAllowedOrigins)) return;
   if (req.method !== 'POST') { res.status(405).json({ error: { code: 'method_not_allowed', message: 'Método no soportado.' } }); return; }
   const action = Array.isArray(req.query.action) ? req.query.action[0] : req.query.action;
-  const input = { body: req.body, authorization: authorization(req.headers) };
+  const input = { body: req.body as unknown, authorization: authorization(req.headers) };
   const handlers = getAuthHandlers(); const response = action === 'request-otp' ? await handlers.accountRequestOtp(input) : action === 'verify-otp' ? await handlers.accountVerifyOtp(input) : { status: 404, body: { error: { code: 'not_found', message: 'Ruta no encontrada.' } } };
   if (response.headers) for (const [key, value] of Object.entries(response.headers)) res.setHeader(key, value);
   res.status(response.status).json(response.body);

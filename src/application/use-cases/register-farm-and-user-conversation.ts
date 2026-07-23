@@ -68,6 +68,17 @@ export class RegisterFarmAndUserConversation implements OnboardingConversation {
     return this.startFresh(channelUserHash, ctx);
   }
 
+  async resume(channelUserHash: string, ctx: OnboardingContext): Promise<FarmReply | null> {
+    const draft = await this.loadDraft(channelUserHash);
+    if (draft === null) {
+      return null;
+    }
+    // loadDraft usa takePending para obtener el estado de forma atómica; lo
+    // volvemos a guardar con el mismo paso para conservarlo y reponer sus
+    // botones, sin tratar un saludo como una respuesta inválida.
+    return this.advance(channelUserHash, draft.partial, ctx, draft.step);
+  }
+
   // ── Arranque ─────────────────────────────────────────────────────────
 
   private async startFresh(channelUserHash: string, ctx: OnboardingContext): Promise<FarmReply> {

@@ -139,6 +139,17 @@ export class HandleIncomingMessage {
       }
     }
 
+    // Un saludo no debe llevar un borrador conversacional al clasificador ni
+    // contarse como un intento fallido. En su lugar, se repite exactamente el
+    // paso pendiente para que Telegram vuelva a mostrar sus botones.
+    if (hasOnboardingPending && classifySmallTalk(resolved.question) === 'greeting') {
+      const reply = await this.deps.onboarding.resume(userHash, this.onboardingContext(message));
+      if (reply !== null) {
+        await this.deliverReply(message, gateway, resolved, reply, startedAt);
+        return;
+      }
+    }
+
     // Atajo determinista ANTES del clasificador (PLAN-v1.1.md §2): un "sí"
     // o "no" corto con pending activo no necesita pasar por el LLM. Un
     // registro en curso tiene prioridad sobre cualquier otro pendiente.

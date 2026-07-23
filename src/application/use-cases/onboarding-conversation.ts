@@ -26,4 +26,10 @@ export interface OnboardingContext {
  */
 export interface OnboardingConversation {
   handle(channelUserHash: string, text: string, ctx: OnboardingContext): Promise<FarmReply>;
+
+  /**
+   * Repite el paso pendiente sin interpretar el texto como respuesta. Sirve
+   * para que un saludo no pierda ni penalice un registro que quedó a medias.
+   */
+  resume(channelUserHash: string, ctx: OnboardingContext): Promise<FarmReply | null>;
 }
