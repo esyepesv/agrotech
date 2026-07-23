@@ -18,6 +18,7 @@
 | 010 | `plan-sanitario-read-back` | Recordatorios de plan sanitario validado (`remind_from_plan`) + suite de seguridad (Corte 4 de v1.1) | `SanitaryPlanProvider` real | Pendiente |
 | 011 | `proactividad-read-api` | Push saliente (plantillas WhatsApp aprobadas) + `read-api/` de solo lectura para dashboard | Puerto `Scheduler`; `ReminderPolicy` (dominio) | Pendiente (futuro) |
 | 012 | [`web-entry-splash-bienvenida`](012-web-entry-splash-bienvenida.md) | Entrada de `app/`: splash de marca + pantalla de bienvenida que separa "iniciar sesión" de "registrarme" (hoy cae directo al wizard de registro) | — (frontend puro, reutiliza `LoginPage` y el wizard existentes) | Aprobado — implementado |
+| 013 | [`endurecimiento-registro-y-sesion`](013-endurecimiento-registro-y-sesion.md) | Corrección de 16 defectos del flujo real: suplantación por cédula, duplicados de correo, errores que la web no mostraba, sesión que no sobrevivía a recargar, navegación sin salida y corregir/atrás/cancelar en chat | `GET /account/me`, `POST /register/check-availability`; error `duplicate_email`; pasos `correctPick`/`cancelConfirm` | Implementado (documentado después) |
 
 ## Notas de secuencia
 

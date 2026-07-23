@@ -9,7 +9,7 @@ Backend de **PorcIA**, asistente porcícola para pequeños/medianos productores 
 - `arquitectura.md` — v1, el asesor de voz. Principios vinculantes (§3) y ruta de extensión (§17).
 - `../arquitectura-v1.1.md` (raíz del monorepo local, fuera de este repo git) — módulo granja: dominio, ledger `farm_event`, confirmación obligatoria, seguridad (§12).
 - `arquitectura-v1.2.md` — giro al eje de datos: identidad (`AppUser` + membresías), registro multi-canal, OTP + sesión web.
-- `specs/ROADMAP.md` — índice spec-por-spec. `specs/001-register-farm-and-user.md` es el spec activo.
+- `specs/ROADMAP.md` — índice spec-por-spec. `specs/001-register-farm-and-user.md` es el spec base del ciclo; **`specs/013-endurecimiento-registro-y-sesion.md` fija las reglas vigentes de identidad, duplicados y sesión — léelo antes de tocar registro o login.**
 - `PLAN-v1.1.md` / `PROGRESO-v1.1.md` — estado real de implementación de v1.1 (Corte 0/1 código-completo, en pausa).
 
 ## Regla de oro (no negociable)
@@ -34,9 +34,22 @@ Backend de **PorcIA**, asistente porcícola para pequeños/medianos productores 
 - **Producción:** funciones serverless de Vercel en `api/` (`api/webhook/whatsapp.ts`, `api/webhook/telegram.ts`, `api/health.ts`, `api/leads.ts`) sobre el runtime memoizado `src/interfaces/serverless/runtime.ts`. Las rutas llevan prefijo `/api/*`. Ambas superficies llaman a los mismos casos de uso — nunca duplicar lógica entre ellas.
 - LLM de generación vía OpenRouter (`LLM_BASE_URL`/`LLM_MODEL`); STT (Whisper), TTS y embeddings directo a OpenAI (`OPENAI_API_KEY`). Se registran **todos** los canales cuyas credenciales estén presentes (WhatsApp + Telegram simultáneos).
 
+## Contrato HTTP vigente (spec 001 §4.2 + spec 013)
+
+Rutas locales (Fastify) sin prefijo; en Vercel llevan `/api`. Todos los errores viajan como **`{ error: { code, message } }`** — el `message` ya está redactado en español con el tono de marca, así que los clientes deben usarlo en vez de mantener su propia copia.
+
+- `GET /register/otp-transports` · `POST /register/request-otp` · `POST /register/verify-otp`
+- `GET /register/farms/search?q=` (cuota por IP)
+- `POST /register/check-availability` — `{identificationType, identificationNumber}` o `{email}` → `{available}`. POST y no GET para no dejar cédulas ni correos en los logs de acceso.
+- `POST /register` → `201` con sesión; `409 duplicate_identification|duplicate_email|duplicate_farm|already_member`; `404 farm_not_found`; `400 validation`
+- `POST /account/request-otp|verify-otp` (autenticados) · **`GET /account/me`** → persona + membresías del token; `401 unauthorized`. **Nunca devuelve el celular**: solo existe hasheado.
+- `POST /auth/destinations|request-otp|verify-otp` — login. `destinations` responde igual exista o no la cuenta.
+
 ## Estado operativo a tener en cuenta
 
 - Migraciones en `supabase/migrations/` son idempotentes y se aplican **manualmente** (nunca solas). `0001`–`0006` y `0009_landing_lead.sql` están **aplicadas en producción**. Toda migración nueva nace pendiente: verificar antes de asumir que una tabla existe.
+- **Despliegue a producción: NO ocurre con `git push`.** La rama de trabajo (`feat/v1.2-spec-001-registro`) no es la de producción del proyecto Vercel `agrotech`, así que empujar solo crea un *preview*. Producción se promueve a mano con `npx vercel --prod` desde `backend/`. Verificarlo siempre después de desplegar (p. ej. `GET /api/account/me` debe dar 401, no 405).
+- **La base se vació el 2026-07-23** para probar desde cero: `app_user`, `farm`, `operator`, `worker_invitation`, `otp_code`, `pending_event` y `processed_message` quedaron en 0. `knowledge_chunk` (36 filas, corpus del RAG) y `landing_lead` se conservaron intactos.
 - Los contactos de `porcia-web` entran por `POST /api/leads`: conservar la idempotencia, el rate limit y la tabla `landing_lead` con RLS (solo `service_role` inserta). El aviso SMTP va a `LEAD_NOTIFICATION_TO`.
 - WhatsApp está limitado a **números de prueba** (Business Verification de Meta pendiente). Telegram es el canal de desarrollo.
 - No hay usuarios reales registrados: cambios de contrato de dominio de v1.1 (p. ej. renombrar roles) son de bajo riesgo todavía.

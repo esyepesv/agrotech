@@ -143,8 +143,12 @@ v1.1 modelaba `Operator` como "un número = una persona = una granja". v1.2 sepa
 
 **Unicidad:**
 - `(identification_type, identification_number)` único en `app_user` — una persona, una cuenta.
+- `email` único en `app_user` (índice `app_user_email_idx on (lower(email))`, migración 0006) — es identificador de login. El caso de uso lo consulta antes de insertar y responde `duplicate_email` (409); si no, el choque saldría como fallo de persistencia (500). Ver spec 013 §4.2.
 - `(user_id, farm_id)` único en `operator` — una membresía por granja.
+- `phone_hash` **no** es único a propósito: dos personas pueden *afirmar* el mismo celular mientras ninguna lo pruebe. Solo la columna **probada** (`channel_user_hash`) da acceso.
 - `tax_id` de `farm` **no** es único global (multi-granja: la misma cédula/NIT puede tener varias fincas). Lo que se impide es que la misma persona registre dos veces la **misma** finca (mismo `tax_id` + mismo nombre).
+
+**Regla de "misma persona" (spec 013 §4.1, vinculante).** Que la identificación ya exista no basta para tratar el intento como multi-granja: hay que **demostrar** ser el titular, y solo hay dos pruebas válidas — (1) el `channel_user_hash` de la cuenta coincide con el canal de quien escribe, o (2) la cuenta aún no tiene canal atado y este intento verifica justo el celular que ella declaró (`phone_hash`). Todo lo demás es `duplicate_identification`. Sin esta regla, y como el adaptador web manda siempre `phoneVerified:false` (ninguna cuenta creada por web tiene `channel_user_hash`), bastaba conocer una cédula ajena para que el registro agregara la finca a esa cuenta y devolviera un JWT con el `userId` de su dueño.
 
 ---
 
@@ -221,7 +225,9 @@ export interface InteractiveGateway {
 - **Transportes:** WhatsApp y Telegram (gateways de v1), **SMS vía Twilio** (API HTTP, sin SDK) y **correo vía SMTP** (nodemailer). El motor de códigos es propio; los proveedores solo transportan. SMS es el único que alcanza un número que nunca escribió al bot — WhatsApp exige una *authentication template* aprobada por Meta para iniciar conversación fuera de la ventana de 24 h, y un bot de Telegram no puede escribirle a un teléfono desconocido.
 - **Qué queda verificado:** el destino, no el transporte. Verificar el correo habilita el registro (decisión del usuario), pero **no** liga la identidad de chat: `app_user.channel_user_hash` solo se escribe cuando el celular quedó verificado, para no permitir que alguien reclame el número de otro. `phone_verified_at` / `email_verified_at` dejan la traza.
 - Parámetros (env, validados con zod): `OTP_TTL_SECONDS=300`, `OTP_MAX_ATTEMPTS=5`, `OTP_VERIFIED_GRACE_SECONDS=300`, `OTP_RESEND_COOLDOWN_SECONDS=30`, `SESSION_JWT_SECRET`, `SESSION_TTL_SECONDS=604800`, `CORS_ALLOWED_ORIGINS`.
-- **Login posterior al registro** (recuperar sesión) queda **fuera de v1.2**: extensión futura del mismo puerto `SessionIssuer` + los mismos endpoints OTP (spec futuro).
+- **Login posterior al registro** — ya **implementado** (`LoginWithOtp`, endpoints `/auth/destinations|request-otp|verify-otp`) sobre el mismo `SessionIssuer`, tal como anticipaba este documento. `/auth/destinations` responde igual exista o no la cuenta, para no volver la cédula un oráculo. Una membresía `pendiente` también emite sesión (spec 013 §4.6): tener cuenta y tener permisos son cosas distintas, y los permisos siguen colgando de `operator.status`.
+- **Lectura de la sesión:** `GET /account/me` devuelve persona + membresías del token. Es el **único** endpoint de lectura del corte y lo que permite que recargar la web no pierda la sesión. El celular **no** viaja: de él solo existe el HMAC (spec 013 §4.3).
+- **Aviso temprano de duplicados:** `POST /register/check-availability` (cuota por IP). Compromiso aceptado explícitamente: es un oráculo de cuentas existentes, a cambio de avisar antes de llenar tres pasos (spec 013 §4.4).
 
 ---
 
@@ -237,7 +243,9 @@ La aprobación de trabajadores y el aviso "tu solicitud fue aprobada" implican m
 ## 10. Front de registro (`app/`, repo porcia-app)
 
 - **Diseño fuente de la verdad:** `app/design/Registro.dc.html` + design system en `app/design/ds/` (importados del proyecto Claude Design "Porcia app registro usuarios y granjas"). Paleta: teal `#1B4D3E`, terracota `#C86446`, crema `#F4EFEA`, ink `#2C3531`. Tipografía: **Fredoka** (display) + **Inter** (body).
-- **Wizard (según el diseño):** paso 0 selección de rol (dueño/trabajador) → paso 1 cuenta (tipo id CC/CE/PA, identificación, celular, correo opcional) → paso 2 OTP 6 dígitos (reenvío con cooldown 30 s) → paso 3 finca (dueño: 8 campos) **o** búsqueda de finca (trabajador) → paso 4 invitar equipo (dueño, opcional) → éxito → perfil de solo lectura.
+- **Recorrido real (actualizado):** splash de marca → bienvenida ("Registrarme" / "Ya tengo cuenta", spec 012) → selección de rol → cuenta (tipo de documento de los 6 del enum, identificación, celular, **correo obligatorio**) → finca (dueño: 8 campos) **o** búsqueda de finca (trabajador) → invitar equipo (dueño, opcional) → éxito → perfil de solo lectura.
+- **El OTP dejó de ser un paso obligatorio del wizard** (giro de producto: verificar celular/correo es opcional y posterior). Las pantallas de OTP se conservan para verificar el correo desde el perfil y para el login.
+- **Sesión y navegación (spec 013):** al arrancar se restaura la sesión guardada consultando `/account/me`; hay cerrar sesión; cada pantalla tiene salida y el botón atrás del navegador (y el físico de Android) retrocede un paso en vez de abandonar el sitio, guardando la vista en `history.state` sin necesidad de un router.
 - Stack: Vite + React 18 + TS strict. Deploy en Vercel como proyecto separado. `VITE_API_BASE_URL` maneja la diferencia de rutas local (`/register/*`) vs producción (`/api/register/*`).
 - Detalle completo en `specs/005-register-frontend-app.md` (pendiente de escribir; el índice está en `specs/ROADMAP.md`).
 
