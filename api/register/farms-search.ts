@@ -3,7 +3,7 @@ import {
   getRegistrationConfig,
   getRegistrationHandlers,
 } from '../../src/interfaces/serverless/runtime.js';
-import { applyCors } from './_cors.js';
+import { applyCors } from '../../src/interfaces/serverless/cors.js';
 
 // Discrepancia de prefijo /register vs /api/register: ver la nota en
 // request-otp.ts. Discrepancia ADICIONAL de este endpoint: en Fastify la

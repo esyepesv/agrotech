@@ -3,7 +3,7 @@ import {
   getRegistrationConfig,
   getRegistrationHandlers,
 } from '../../src/interfaces/serverless/runtime.js';
-import { applyCors } from './_cors.js';
+import { applyCors } from '../../src/interfaces/serverless/cors.js';
 
 // NOTA de prefijo (spec 001 §7 / CLAUDE.md "cómo corre"): en Fastify esta
 // ruta vive en `/register/request-otp`; aquí, por el ruteo por archivos de
