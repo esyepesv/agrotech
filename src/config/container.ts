@@ -15,6 +15,7 @@ import { LoginWithOtp } from '../application/use-cases/login-with-otp.js';
 import { LinkChatIdentity } from '../application/use-cases/link-chat-identity.js';
 import type { RegistrationHttpDeps } from '../interfaces/http/register-routes.js';
 import type { AuthHttpDeps } from '../interfaces/http/auth-routes.js';
+import type { LeadHttpDeps } from '../interfaces/http/leads-routes.js';
 import type { OtpTransportSender } from '../application/ports/otp-sender.js';
 import { SupabaseOtpStore } from '../infrastructure/persistence/supabase-otp-store.js';
 import { ChannelOtpSender } from '../infrastructure/security/channel-otp-sender.js';
@@ -42,6 +43,8 @@ import { SupabaseInventoryRepository } from '../infrastructure/persistence/supab
 import { SupabaseLotRepository } from '../infrastructure/persistence/supabase-lot-repository.js';
 import { SupabasePendingEventStore } from '../infrastructure/persistence/supabase-pending-event-store.js';
 import { SupabaseSowRepository } from '../infrastructure/persistence/supabase-sow-repository.js';
+import { SupabaseLeadStore } from '../infrastructure/persistence/supabase-lead-store.js';
+import { SmtpLeadNotifier } from '../infrastructure/security/smtp-lead-notifier.js';
 import { RuleBasedEventSafetyPolicy } from '../infrastructure/safety/rule-based-event-safety-policy.js';
 import { hashUserId } from '../infrastructure/security/user-id-hash.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
@@ -64,6 +67,8 @@ export interface Container {
   readonly registration: RegistrationHttpDeps;
   /** Dependencias de verificación de destinos de una cuenta autenticada. */
   readonly auth: AuthHttpDeps;
+  /** Dependencias del endpoint público de captación de contactos. */
+  readonly leads: LeadHttpDeps;
 }
 
 export function buildContainer(env: Env, logger: Logger): Container {
@@ -213,6 +218,25 @@ export function buildContainer(env: Env, logger: Logger): Container {
     sessionTtlSeconds: env.SESSION_TTL_SECONDS,
   });
   const auth: AuthHttpDeps = { registration, verifyAccountDestination, loginWithOtp };
+  const smtpConfig =
+    env.SMTP_HOST !== undefined &&
+    env.SMTP_USER !== undefined &&
+    env.SMTP_PASSWORD !== undefined &&
+    env.SMTP_FROM !== undefined
+      ? {
+          host: env.SMTP_HOST,
+          port: env.SMTP_PORT,
+          user: env.SMTP_USER,
+          password: env.SMTP_PASSWORD,
+          from: env.SMTP_FROM,
+        }
+      : undefined;
+  const leads: LeadHttpDeps = {
+    store: new SupabaseLeadStore(supabase),
+    notifier: new SmtpLeadNotifier(smtpConfig, env.LEAD_NOTIFICATION_TO),
+    clock,
+    corsAllowedOrigins: env.CORS_ALLOWED_ORIGINS,
+  };
   const linkChatIdentity = new LinkChatIdentity({ farmRepository, hashUserId: hashUserIdWithSalt, clock });
 
   const handleIncomingMessage = new HandleIncomingMessage({
@@ -241,6 +265,7 @@ export function buildContainer(env: Env, logger: Logger): Container {
     deduplicator,
     registration,
     auth,
+    leads,
   };
 }
 

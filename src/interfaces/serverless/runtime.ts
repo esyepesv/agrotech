@@ -9,6 +9,7 @@ import {
   type RegistrationHttpDeps,
 } from '../http/register-routes.js';
 import { createAuthHandlers, type AuthHandlers } from '../http/auth-routes.js';
+import { createLeadHandlers, type LeadHandlers } from '../http/leads-routes.js';
 
 interface ServerlessRuntime {
   readonly env: Env;
@@ -109,6 +110,7 @@ export async function processIncoming(message: IncomingMessage): Promise<void> {
 // forzar a `getRuntime()` a conocer el tipo `RegistrationHandlers`.
 let registrationHandlers: RegistrationHandlers | undefined;
 let authHandlers: AuthHandlers | undefined;
+let leadHandlers: LeadHandlers | undefined;
 
 /**
  * Handlers HTTP-agnósticos de `/register/*` para los endpoints serverless
@@ -131,6 +133,14 @@ export function getAuthHandlers(): AuthHandlers {
     authHandlers = createAuthHandlers(getRuntime().container.auth);
   }
   return authHandlers;
+}
+
+/** Handler público de contactos de porcia-web, memoizado por instancia. */
+export function getLeadHandlers(): LeadHandlers {
+  if (leadHandlers === undefined) {
+    leadHandlers = createLeadHandlers(getRuntime().container.leads);
+  }
+  return leadHandlers;
 }
 
 /**

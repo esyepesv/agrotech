@@ -1,8 +1,26 @@
 # Porcia — Backend (Asistente Porcícola de Voz)
 
-Backend de **Porcia**. Asistente de conocimiento por voz para porcicultores pequeños/medianos en Colombia. Recibe preguntas de manejo por Telegram o WhatsApp (texto o nota de voz), las responde con base en un corpus curado (RAG) y **escala a un veterinario** cuando el tema es sanitario o de medicación. El enfoque es deliberadamente angosto (el "wedge"): un asistente de conocimiento por voz que no exige que el productor registre ningún dato, y responde en el mismo formato en que le preguntaron (audio → audio, texto → texto). Ver `arquitectura.md` para la especificación completa de diseño (arquitectura hexagonal, puertos y adaptadores) y las notas de qué cambió respecto al plan original durante la implementación.
+Backend de **Porcia**. Su eje es la captura de datos productivos de granjas porcinas; el asistente de conocimiento por voz por Telegram o WhatsApp complementa ese flujo y **escala a un veterinario** cuando el tema es sanitario o de medicación. Ver `arquitectura-v1.2.md` para el enfoque actual y `arquitectura.md` para el diseño del asistente.
 
 **Producción:** desplegado en Vercel en `https://agrotech-beryl.vercel.app` (auto-deploy en cada push a `main`, repo conectado a Vercel). Health check: `GET /api/health`.
+
+## Leads de la landing
+
+`POST /api/leads` recibe los formularios de piloto y aliados de `porcia-web`.
+Persiste los contactos en `landing_lead` y envía un aviso a
+`LEAD_NOTIFICATION_TO` mediante SMTP. La migración
+`supabase/migrations/0009_landing_lead.sql` ya está aplicada en producción;
+aplíquela también en cada entorno nuevo antes de recibir leads. Incluye el
+origen de la landing en `CORS_ALLOWED_ORIGINS`.
+
+| Ruta | Método | Requisitos | Respuesta |
+| --- | --- | --- | --- |
+| `/api/leads` | `POST` | `Idempotency-Key`, consentimiento y datos del tipo `pilot` o `partner` | `201 { ok: true }` |
+
+El endpoint limita a 5 envíos por IP/hora, valida los payloads con Zod y
+acepta un campo trampa `website` para descartar bots. Para desarrollo local,
+configura `CORS_ALLOWED_ORIGINS=http://localhost:5173` y usa el prefijo local
+`POST /leads`; en Vercel la ruta es `POST /api/leads`.
 
 ## Stack
 
@@ -41,6 +59,7 @@ src/
 
 api/                              # Funciones serverless de Vercel (producción)
 ├── health.ts                    # GET /api/health
+├── leads.ts                     # POST /api/leads (formularios de porcia-web)
 └── webhook/
     ├── telegram.ts               # POST /api/webhook/telegram
     └── whatsapp.ts                # GET (verificación Meta) + POST /api/webhook/whatsapp
@@ -136,6 +155,7 @@ En producción, la lógica corre como funciones serverless en `api/` (el servido
 Rutas expuestas:
 
 - `GET /api/health`
+- `POST /api/leads`
 - `POST /api/webhook/telegram`
 - `GET|POST /api/webhook/whatsapp` (`GET` = verificación de Meta, `POST` = mensajes entrantes)
 
@@ -177,7 +197,11 @@ Correr los tests:
 npm test
 ```
 
-Estado actual: **71 tests pasando, 5 saltados**. Los saltados son de integración de infraestructura (LLM, embeddings, STT/TTS, persistencia en Supabase) y usan `describe.skipIf`: se saltan automáticamente cuando no hay credenciales reales en el entorno, sin fallar el CI por su ausencia.
+Estado actual: la suite cubre dominio, aplicación, endpoints de registro y el
+endpoint de leads. Los tests de integración de infraestructura (LLM,
+embeddings, STT/TTS y persistencia en Supabase) usan `describe.skipIf`: se
+saltan automáticamente cuando no hay credenciales reales en el entorno, sin
+fallar el CI por su ausencia.
 
 ## Estado actual y pendientes
 
@@ -192,7 +216,8 @@ Estado actual: **71 tests pasando, 5 saltados**. Los saltados son de integració
 - Privacidad: `channelUserId` se guarda como HMAC-SHA256 + pepper (`USER_ID_SALT`) en `conversation_turn`, nunca en claro ni con un hash pelado.
 - Verificación de firma `X-Hub-Signature-256` en el webhook de WhatsApp (con `WHATSAPP_APP_SECRET`), umbral mínimo de relevancia en el RAG (`RAG_MIN_SCORE`) y guardrail de salida (`reviewAnswer`) cableado en `AnswerQuery` — ver sección "Seguridad".
 - Guardrails de escalamiento ampliados con expresiones coloquiales de síntomas ("no come", "no se levanta", "cojea", "hinchado", etc.) sin bloquear preguntas de manejo rutinario.
-- Tests verdes: 71 passing, 5 skipped.
+- Captura de leads de la landing: tabla `landing_lead` con RLS, inserción solo
+  desde `service_role`, idempotencia, rate limit, CORS y notificación SMTP.
 
 ### Pendientes conocidos
 

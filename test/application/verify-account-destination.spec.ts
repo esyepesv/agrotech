@@ -29,16 +29,32 @@ describe('VerifyAccountDestination', () => {
 
     await otpStore.saveCode(
       { destination: '+573001234567' },
-      { destinationKind: 'phone', transport: 'whatsapp', codeHash: '123456', ttlSeconds: 300, maxAttempts: 5 },
+      {
+        destinationKind: 'phone',
+        transport: 'whatsapp',
+        codeHash: '123456',
+        ttlSeconds: 300,
+        maxAttempts: 5,
+      },
     );
     await otpStore.saveCode(
       { destination: 'juan@finca.co' },
-      { destinationKind: 'email', transport: 'email', codeHash: '123456', ttlSeconds: 300, maxAttempts: 5 },
+      {
+        destinationKind: 'email',
+        transport: 'email',
+        codeHash: '123456',
+        ttlSeconds: 300,
+        maxAttempts: 5,
+      },
     );
   });
 
   it('verificar el celular liga la identidad de chat', async () => {
-    const outcome = await useCase.verify({ userId: 'u1', destination: '+573001234567', code: '123456' });
+    const outcome = await useCase.verify({
+      userId: 'u1',
+      destination: '+573001234567',
+      code: '123456',
+    });
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
       expect(outcome.value.destinationKind).toBe('phone');
@@ -51,14 +67,22 @@ describe('VerifyAccountDestination', () => {
   });
 
   it('verificar el correo NO liga identidad de chat', async () => {
-    const outcome = await useCase.verify({ userId: 'u1', destination: 'juan@finca.co', code: '123456' });
+    const outcome = await useCase.verify({
+      userId: 'u1',
+      destination: 'juan@finca.co',
+      code: '123456',
+    });
     expect(outcome.ok).toBe(true);
     expect(repo.lastAttach?.channelUserHash).toBeUndefined();
     expect(repo.lastAttach?.emailVerifiedAt).toBeInstanceOf(Date);
   });
 
   it('rechaza un destino que no es de la cuenta', async () => {
-    const outcome = await useCase.verify({ userId: 'u1', destination: '+573009999999', code: '123456' });
+    const outcome = await useCase.verify({
+      userId: 'u1',
+      destination: '+573009999999',
+      code: '123456',
+    });
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
       expect(outcome.error.kind).toBe('destination_mismatch');
@@ -68,7 +92,11 @@ describe('VerifyAccountDestination', () => {
   });
 
   it('rechaza un código incorrecto', async () => {
-    const outcome = await useCase.verify({ userId: 'u1', destination: '+573001234567', code: '000000' });
+    const outcome = await useCase.verify({
+      userId: 'u1',
+      destination: '+573001234567',
+      code: '000000',
+    });
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
       expect(outcome.error.kind).toBe('invalid_code');
@@ -76,7 +104,11 @@ describe('VerifyAccountDestination', () => {
   });
 
   it('rechaza un userId sin cuenta', async () => {
-    const outcome = await useCase.verify({ userId: 'no-existe', destination: '+573001234567', code: '123456' });
+    const outcome = await useCase.verify({
+      userId: 'no-existe',
+      destination: '+573001234567',
+      code: '123456',
+    });
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
       expect(outcome.error.kind).toBe('destination_mismatch');

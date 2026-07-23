@@ -7,6 +7,7 @@ import { ConfigurationError } from '../../shared/errors.js';
 import { AnswerQueryDispatcher } from './dispatcher.js';
 import { registerRegistrationRoutes } from './register-routes.js';
 import { registerAuthRoutes } from './auth-routes.js';
+import { registerLeadRoutes } from './leads-routes.js';
 import { registerTelegramWebhook } from './telegram-webhook.js';
 import { registerWhatsAppWebhook } from './whatsapp-webhook.js';
 
@@ -63,6 +64,7 @@ export function buildServer(env: Env): FastifyInstance {
   // estas rutas dentro de `registerRegistrationRoutes`, nunca global.
   registerRegistrationRoutes(app, container.registration);
   registerAuthRoutes(app, container.auth);
+  registerLeadRoutes(app, container.leads);
 
   return app;
 }

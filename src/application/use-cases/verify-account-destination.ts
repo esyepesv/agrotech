@@ -24,7 +24,8 @@ export interface VerifyAccountDestinationOutcome {
 }
 
 export interface VerifyAccountDestinationError {
-  readonly kind: 'destination_mismatch' | 'invalid_code' | 'expired' | 'too_many_attempts' | 'persistence';
+  readonly kind:
+    'destination_mismatch' | 'invalid_code' | 'expired' | 'too_many_attempts' | 'persistence';
   readonly message: string;
 }
 
@@ -57,7 +58,10 @@ export class VerifyAccountDestination {
       });
     }
 
-    const status = await this.deps.otpStore.verifyCode({ destination: normalizedDestination }, input.code);
+    const status = await this.deps.otpStore.verifyCode(
+      { destination: normalizedDestination },
+      input.code,
+    );
     const verifyError = toVerifyError(status);
     if (verifyError !== undefined) {
       return err(verifyError);
@@ -103,7 +107,10 @@ function toVerifyError(status: OtpVerifyStatus): VerifyAccountDestinationError |
     case 'verified':
       return undefined;
     case 'invalid_code':
-      return { kind: 'invalid_code', message: 'Ese código no es correcto. Revisa e inténtalo de nuevo.' };
+      return {
+        kind: 'invalid_code',
+        message: 'Ese código no es correcto. Revisa e inténtalo de nuevo.',
+      };
     case 'not_found':
       return {
         kind: 'invalid_code',
@@ -112,6 +119,9 @@ function toVerifyError(status: OtpVerifyStatus): VerifyAccountDestinationError |
     case 'expired':
       return { kind: 'expired', message: 'El código venció, solicita uno nuevo.' };
     case 'too_many_attempts':
-      return { kind: 'too_many_attempts', message: 'Intentaste demasiadas veces. Pide un código nuevo.' };
+      return {
+        kind: 'too_many_attempts',
+        message: 'Intentaste demasiadas veces. Pide un código nuevo.',
+      };
   }
 }

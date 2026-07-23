@@ -80,6 +80,8 @@ const envSchema = z
     SMTP_USER: z.string().min(1).optional(),
     SMTP_PASSWORD: z.string().min(1).optional(),
     SMTP_FROM: z.string().min(1).optional(),
+    // Destino de los avisos de contactos enviados desde la landing pública.
+    LEAD_NOTIFICATION_TO: z.string().email().default('porciacol@gmail.com'),
 
     // Secreto de firma de la sesión web (HS256). Requerido: sin él la API de
     // registro emitiría sesiones falsificables, así que el proceso no debe

@@ -30,13 +30,14 @@ Backend de **PorcIA**, asistente porcícola para pequeños/medianos productores 
 
 ## Cómo corre
 
-- **Local:** servidor Fastify (`src/interfaces/http/server.ts`), rutas `/webhook/*`, `/health`. `npm run dev`.
-- **Producción:** funciones serverless de Vercel en `api/` (`api/webhook/whatsapp.ts`, `api/webhook/telegram.ts`, `api/health.ts`) sobre el runtime memoizado `src/interfaces/serverless/runtime.ts`. Las rutas llevan prefijo `/api/*`. Ambas superficies llaman a los mismos casos de uso — nunca duplicar lógica entre ellas.
+- **Local:** servidor Fastify (`src/interfaces/http/server.ts`), rutas `/webhook/*`, `/health` y `/leads`. `npm run dev`.
+- **Producción:** funciones serverless de Vercel en `api/` (`api/webhook/whatsapp.ts`, `api/webhook/telegram.ts`, `api/health.ts`, `api/leads.ts`) sobre el runtime memoizado `src/interfaces/serverless/runtime.ts`. Las rutas llevan prefijo `/api/*`. Ambas superficies llaman a los mismos casos de uso — nunca duplicar lógica entre ellas.
 - LLM de generación vía OpenRouter (`LLM_BASE_URL`/`LLM_MODEL`); STT (Whisper), TTS y embeddings directo a OpenAI (`OPENAI_API_KEY`). Se registran **todos** los canales cuyas credenciales estén presentes (WhatsApp + Telegram simultáneos).
 
 ## Estado operativo a tener en cuenta
 
-- Migraciones en `supabase/migrations/` son idempotentes y se aplican **manualmente** (nunca solas). `0001`–`0006` están **aplicadas en producción** (la 0006 el 2026-07-22). Toda migración nueva nace pendiente: verificar antes de asumir que una tabla existe.
+- Migraciones en `supabase/migrations/` son idempotentes y se aplican **manualmente** (nunca solas). `0001`–`0006` y `0009_landing_lead.sql` están **aplicadas en producción**. Toda migración nueva nace pendiente: verificar antes de asumir que una tabla existe.
+- Los contactos de `porcia-web` entran por `POST /api/leads`: conservar la idempotencia, el rate limit y la tabla `landing_lead` con RLS (solo `service_role` inserta). El aviso SMTP va a `LEAD_NOTIFICATION_TO`.
 - WhatsApp está limitado a **números de prueba** (Business Verification de Meta pendiente). Telegram es el canal de desarrollo.
 - No hay usuarios reales registrados: cambios de contrato de dominio de v1.1 (p. ej. renombrar roles) son de bajo riesgo todavía.
 - WhatsApp no permite iniciar conversaciones fuera de la ventana de 24 h sin plantillas pre-aprobadas — ninguna feature puede depender de push saliente (ver `arquitectura-v1.2.md` §9).
