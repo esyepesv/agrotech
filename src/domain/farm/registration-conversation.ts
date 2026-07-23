@@ -50,6 +50,7 @@ export interface PendingApprovalOption {
   readonly farmId: string;
   readonly farmName: string;
   readonly identificationNumber: string;
+  readonly identificationType: IdentificationType;
   readonly displayName?: string;
 }
 
@@ -140,8 +141,11 @@ const LEGAL_TYPE_OPTIONS: readonly ReplyOption[] = [
 ];
 
 const ID_TYPE_OPTIONS: readonly ReplyOption[] = [
-  { id: optionId('idType', 'CC'), label: 'Cédula' },
-  { id: optionId('idType', 'CE'), label: 'Extranjería' },
+  { id: optionId('idType', 'TI'), label: 'Tarjeta de Identidad' },
+  { id: optionId('idType', 'CC'), label: 'Cédula de Ciudadanía' },
+  { id: optionId('idType', 'CE'), label: 'Cédula de Extranjería' },
+  { id: optionId('idType', 'PPT'), label: 'Permiso por Protección Temporal' },
+  { id: optionId('idType', 'PEP'), label: 'Permiso Especial de Permanencia' },
   { id: optionId('idType', 'PA'), label: 'Pasaporte' },
 ];
 
@@ -274,7 +278,11 @@ export function promptFor(
 ): RegistrationPrompt {
   const options = optionsForStep(step, partial);
   const layout: InteractiveLayout | undefined =
-    options === undefined ? undefined : step === 'workerFarmPick' ? 'list' : 'buttons';
+    options === undefined
+      ? undefined
+      : step === 'workerFarmPick' || options.length > 3
+        ? 'list'
+        : 'buttons';
 
   switch (step) {
     case 'role':
@@ -350,14 +358,17 @@ function approveWorkerText(pending: PendingApprovalOption | undefined): string {
     return 'No tengo una solicitud pendiente para mostrarte.';
   }
   const who = pending.displayName ?? 'Alguien';
-  return `${who} (CC ${pending.identificationNumber}) pide unirse a ${pending.farmName}. ¿Apruebas?`;
+  return `${who} (${ID_TYPE_LABELS[pending.identificationType]} ${pending.identificationNumber}) pide unirse a ${pending.farmName}. ¿Apruebas?`;
 }
 
 // ── summaryOf ──────────────────────────────────────────────────────────
 
 const ID_TYPE_LABELS: Record<IdentificationType, string> = {
-  CC: 'cédula',
+  TI: 'tarjeta de identidad',
+  CC: 'cédula de ciudadanía',
   CE: 'cédula de extranjería',
+  PPT: 'permiso por protección temporal',
+  PEP: 'permiso especial de permanencia',
   PA: 'pasaporte',
 };
 

@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AppUser, AppUserId, IdentificationType } from '../../domain/farm/app-user.js';
+import {
+  isIdentificationType,
+  type AppUser,
+  type AppUserId,
+  type IdentificationType,
+} from '../../domain/farm/app-user.js';
 import { DEFAULT_META_PARTOS_POR_ANO, DEFAULT_REGION } from '../../domain/farm/farm.js';
 import type { Farm, FarmId } from '../../domain/farm/farm.js';
 import type {
@@ -612,7 +617,10 @@ function fromAppUser(user: AppUser): AppUserRow {
 }
 
 function toIdentificationType(value: string): IdentificationType {
-  return value === 'CE' || value === 'PA' ? value : 'CC';
+  if (isIdentificationType(value)) {
+    return value;
+  }
+  throw new Error(`Tipo de identificación inválido en app_user: ${value}`);
 }
 
 function toWorkerInvitation(row: WorkerInvitationRow): WorkerInvitation {

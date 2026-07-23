@@ -1,4 +1,4 @@
-import type { AppUser, IdentificationType } from '../../domain/farm/app-user.js';
+import { IDENTIFICATION_TYPES, type AppUser } from '../../domain/farm/app-user.js';
 import { normalizeDestination } from '../../domain/otp/otp-destination.js';
 import { err, ok, type Result } from '../../domain/shared/result.js';
 import type { FarmRepository, OperatorWithFarm } from '../ports/farm-repository.js';
@@ -126,8 +126,6 @@ export class LoginWithOtp {
     return null;
   }
 }
-
-const IDENTIFICATION_TYPES: readonly IdentificationType[] = ['CC', 'CE', 'PA'];
 
 function maskEmail(email: string): string {
   const [local = '', domain = 'correo.com'] = email.split('@');

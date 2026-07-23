@@ -173,6 +173,26 @@ describe('registerRegistrationRoutes', () => {
     harness = buildHarness();
   });
 
+  it.each(['TI', 'CC', 'CE', 'PPT', 'PEP', 'PA'])(
+    'acepta el tipo de identificación %s',
+    async (identificationType) => {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/register',
+        payload: {
+          kind: 'owner',
+          user: userInputBody({ identificationType }),
+          farm: farmInputBody(),
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      expect(harness.registerFarmAndUser.lastInput?.user.identificationType).toBe(
+        identificationType,
+      );
+    },
+  );
+
   describe('GET /register/otp-transports', () => {
     it('camino feliz: devuelve los transportes disponibles', async () => {
       const response = await harness.app.inject({ method: 'GET', url: '/register/otp-transports' });

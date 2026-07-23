@@ -3,6 +3,7 @@ import {
   applyAnswer,
   nextStep,
   optionsForStep,
+  promptFor,
   summaryOf,
   type RegistrationPartial,
 } from '../../../src/domain/farm/registration-conversation.js';
@@ -25,10 +26,25 @@ const ownerPartialConFincaCompleta: RegistrationPartial = {
 describe('registration-conversation — correo obligatorio (tarea 3)', () => {
   it('nombra explícitamente al dueño o administrador en la opción de rol', () => {
     expect(optionsForStep('role', {})).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: 'Soy dueño o administrador' })]),
+    );
+  });
+
+  it('ofrece todos los documentos colombianos y de extranjería admitidos', () => {
+    expect(optionsForStep('idType', {})).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: 'Soy dueño o administrador' }),
+        expect.objectContaining({ id: 'reg:idType:TI' }),
+        expect.objectContaining({ id: 'reg:idType:CC' }),
+        expect.objectContaining({ id: 'reg:idType:CE' }),
+        expect.objectContaining({ id: 'reg:idType:PPT' }),
+        expect.objectContaining({ id: 'reg:idType:PEP' }),
+        expect.objectContaining({ id: 'reg:idType:PA' }),
       ]),
     );
+  });
+
+  it('usa lista para que los seis documentos se puedan mostrar en todos los canales', () => {
+    expect(promptFor('idType', {}, { channel: 'whatsapp' }).layout).toBe('list');
   });
 
   it('pide el correo al dueño y no ofrece saltarlo', () => {

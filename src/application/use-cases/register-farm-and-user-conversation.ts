@@ -124,6 +124,7 @@ export class RegisterFarmAndUserConversation implements OnboardingConversation {
         operatorId: next.operator.id,
         farmId: next.farm.id,
         farmName: next.farm.name,
+        identificationType: next.user.identificationType,
         identificationNumber: next.user.identificationNumber,
         displayName: next.user.displayName,
       },

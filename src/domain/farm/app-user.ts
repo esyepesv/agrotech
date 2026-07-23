@@ -1,6 +1,15 @@
 export type AppUserId = string;
 
-export type IdentificationType = 'CC' | 'CE' | 'PA';
+// Códigos de `public.identification_type` en Postgres. Mantener este
+// catálogo sincronizado con la migración 0007: es el contrato entre dominio,
+// API, conversación y base de datos.
+export const IDENTIFICATION_TYPES = ['TI', 'CC', 'CE', 'PPT', 'PEP', 'PA'] as const;
+
+export type IdentificationType = (typeof IDENTIFICATION_TYPES)[number];
+
+export function isIdentificationType(value: string): value is IdentificationType {
+  return (IDENTIFICATION_TYPES as readonly string[]).includes(value);
+}
 
 // Persona registrada (v1.2 separa identidad de persona de membresía de
 // granja — arquitectura-v1.2.md §5). Única por (identificationType,

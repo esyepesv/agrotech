@@ -117,7 +117,7 @@ const farmsSearchQuerySchema = z.object({
   q: z.string().trim().min(3),
 });
 
-const identificationTypeSchema = z.enum(['CC', 'CE', 'PA']);
+const identificationTypeSchema = z.enum(['TI', 'CC', 'CE', 'PPT', 'PEP', 'PA']);
 
 const userInputBodySchema = z.object({
   identificationType: identificationTypeSchema,
