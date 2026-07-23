@@ -139,6 +139,19 @@ export class HandleIncomingMessage {
       }
     }
 
+    // El contacto propio compartido por Telegram es una respuesta verificada
+    // al paso de celular. Tiene prioridad sobre el clasificador para que no
+    // acabe como una consulta de conocimiento.
+    if (hasOnboardingPending && message.contactPhone !== undefined) {
+      const reply = await this.deps.onboarding.handle(
+        userHash,
+        resolved.question,
+        this.onboardingContext(message),
+      );
+      await this.deliverReply(message, gateway, resolved, reply, startedAt);
+      return;
+    }
+
     // Un saludo no debe llevar un borrador conversacional al clasificador ni
     // contarse como un intento fallido. En su lugar, se repite exactamente el
     // paso pendiente para que Telegram vuelva a mostrar sus botones.

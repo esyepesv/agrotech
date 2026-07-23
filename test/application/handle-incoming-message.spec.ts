@@ -88,6 +88,18 @@ function textMessage(text: string, channelUserId = 'user-1'): IncomingMessage {
   };
 }
 
+function contactMessage(phone: string, channelUserId = 'user-1'): IncomingMessage {
+  return {
+    channel: 'telegram',
+    channelUserId,
+    messageId: 'msg-contact',
+    type: 'text',
+    text: 'contacto compartido',
+    contactPhone: phone,
+    receivedAt: new Date(),
+  };
+}
+
 function voiceMessage(channelUserId = 'user-1'): IncomingMessage {
   return {
     channel: 'telegram',
@@ -488,6 +500,22 @@ describe('HandleIncomingMessage', () => {
     expect(gateway.contactRequests).toEqual([
       { channelUserId: 'user-1', body: '¿Cuál es tu número de celular? Puedes compartirlo o escribirlo.' },
     ]);
+  });
+
+  it('el contacto compartido completa el celular pendiente sin llegar al asistente', async () => {
+    const gateway = new FakeInteractiveChannelGateway();
+    const h = buildHarness(gateway);
+    const text = 'quiero registrarme';
+    const tap = 'reg:role:administrador_dueno';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+    h.intentClassifier.respuestas.set(tap, { kind: 'onboarding', confidence: 0.9 });
+
+    await h.handler.handle(textMessage(text), gateway);
+    await h.handler.handle(textMessage(tap), gateway);
+    await h.handler.handle(contactMessage('+573001234567'), gateway);
+
+    expect(gateway.sent).toHaveLength(1);
+    expect(gateway.sent[0]?.text).toBe('¿Cómo se llama tu finca?');
   });
 
   // ── Defecto de identidad de chat (hashed-zooming-flame.md, Tarea 1) ────
