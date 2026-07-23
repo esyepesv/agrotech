@@ -44,6 +44,7 @@ const FARM_ID = 'farm-1';
 
 class FakeInteractiveChannelGateway extends FakeChannelGateway implements InteractiveGateway {
   readonly interactiveSent: InteractiveMessage[] = [];
+  readonly contactRequests: { channelUserId: string; body: string }[] = [];
 
   supportsInteractive(): boolean {
     return true;
@@ -51,6 +52,11 @@ class FakeInteractiveChannelGateway extends FakeChannelGateway implements Intera
 
   async sendInteractive(message: InteractiveMessage) {
     this.interactiveSent.push(message);
+    return ok(undefined);
+  }
+
+  async requestContact(channelUserId: string, body: string) {
+    this.contactRequests.push({ channelUserId, body });
     return ok(undefined);
   }
 }
@@ -247,8 +253,9 @@ describe('HandleIncomingMessage', () => {
 
     await h.handler.handle(textMessage('hola'), h.gateway);
 
+    expect(h.gateway.sent).toHaveLength(1);
     expect(h.gateway.sent[0]?.text).toContain('¿En qué te puedo ayudar?');
-    expect(h.gateway.sent[1]?.text).toContain('1. Registrarme');
+    expect(h.gateway.sent[0]?.text).toContain('1. Registrarme');
   });
 
   it('pregunta de conocimiento → responde vía AnswerQuery', async () => {
@@ -409,7 +416,7 @@ describe('HandleIncomingMessage', () => {
 
     await h.handler.handle(textMessage(text), h.gateway);
 
-    expect(h.gateway.sent[0]?.text).toBe(
+    expect(h.gateway.sent[0]?.text).toContain(
       '¿Eres el dueño/administrador de la finca o trabajas en ella?',
     );
     expect(await h.pendingEventStore.hasPending(chatHash('telegram', 'user-1'))).toBe(true);
@@ -431,7 +438,7 @@ describe('HandleIncomingMessage', () => {
     expect(await h.farmRepository.findOperatorByHash(chatHash('telegram', 'user-1'))).toBeNull();
   });
 
-  it('elegir "Soy dueño" por botón avanza al nombre de la finca', async () => {
+  it('elegir "Soy dueño" por botón avanza al número de celular', async () => {
     const h = buildHarness();
     const text = 'quiero registrarme';
     h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
@@ -442,7 +449,7 @@ describe('HandleIncomingMessage', () => {
     h.intentClassifier.respuestas.set(tap, { kind: 'onboarding', confidence: 0.9 });
     await h.handler.handle(textMessage(tap), h.gateway);
 
-    expect(h.gateway.sent[1]?.text.toLowerCase()).toContain('finca');
+    expect(h.gateway.sent[1]?.text.toLowerCase()).toContain('celular');
     expect(await h.farmRepository.findOperatorByHash(chatHash('telegram', 'user-1'))).toBeNull();
   });
 
@@ -455,7 +462,8 @@ describe('HandleIncomingMessage', () => {
     await h.handler.handle(textMessage(text), gateway);
     await h.handler.handle(textMessage('hola'), gateway);
 
-    expect(gateway.sent[1]?.text).toBe(
+    expect(gateway.sent).toHaveLength(0);
+    expect(gateway.interactiveSent[1]?.body).toBe(
       '¿Eres el dueño/administrador de la finca o trabajas en ella?',
     );
     expect(gateway.interactiveSent[1]?.options).toEqual(
@@ -463,6 +471,23 @@ describe('HandleIncomingMessage', () => {
         expect.objectContaining({ label: 'Soy dueño o administrador' }),
       ]),
     );
+  });
+
+  it('el paso de celular usa un único teclado nativo, sin duplicar el texto', async () => {
+    const gateway = new FakeInteractiveChannelGateway();
+    const h = buildHarness(gateway);
+    const text = 'quiero registrarme';
+    h.intentClassifier.respuestas.set(text, { kind: 'onboarding', confidence: 0.9 });
+
+    await h.handler.handle(textMessage(text), gateway);
+    const tap = 'reg:role:administrador_dueno';
+    h.intentClassifier.respuestas.set(tap, { kind: 'onboarding', confidence: 0.9 });
+    await h.handler.handle(textMessage(tap), gateway);
+
+    expect(gateway.sent).toHaveLength(0);
+    expect(gateway.contactRequests).toEqual([
+      { channelUserId: 'user-1', body: '¿Cuál es tu número de celular? Puedes compartirlo o escribirlo.' },
+    ]);
   });
 
   // ── Defecto de identidad de chat (hashed-zooming-flame.md, Tarea 1) ────

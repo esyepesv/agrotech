@@ -305,12 +305,18 @@ export class HandleIncomingMessage {
     reply: FarmReply,
     startedAt: number,
   ): Promise<void> {
-    // §4.1.3 "voz + botones": si el input fue voz, la nota de audio con la
-    // pregunta va primero (regla de formato de siempre) y, si el paso tiene
-    // opciones, el mensaje interactivo va DESPUÉS como un segundo mensaje
-    // deliberado — el mismo orden aplica para texto (texto, luego botones).
-    const delivery = await this.deliver(gateway, incoming, reply.text, resolved.locale);
-    await this.deliverInteractiveExtras(gateway, incoming, reply);
+    // En texto, el mensaje interactivo ya contiene el cuerpo de la pregunta:
+    // enviarlo además como texto normal duplicaba cada paso en Telegram. En
+    // voz sí se conserva la nota de audio y luego el teclado como segundo
+    // mensaje, porque Telegram no puede adjuntar botones a una nota de voz.
+    const hasInteractiveControl =
+      reply.requestContact === true || (reply.options !== undefined && reply.options.length > 0);
+    const delivery = incoming.type === 'text' && hasInteractiveControl
+      ? await this.deliverInteractiveReply(gateway, incoming, reply)
+      : await this.deliver(gateway, incoming, reply.text, resolved.locale);
+    if (incoming.type === 'voice' && hasInteractiveControl) {
+      await this.deliverInteractiveReply(gateway, incoming, reply);
+    }
     await this.record(incoming, resolved.question, reply.text, startedAt);
     this.throwIfDeliveryFailed(incoming, delivery);
   }
@@ -338,25 +344,25 @@ export class HandleIncomingMessage {
    * a texto con `renderNumberedFallback` (§5, "fallo al enviar el mensaje
    * interactivo").
    */
-  private async deliverInteractiveExtras(
+  private async deliverInteractiveReply(
     gateway: ChannelGateway,
     incoming: IncomingMessage,
     reply: FarmReply,
-  ): Promise<void> {
+  ): Promise<Result<void, ChannelError>> {
     const interactive = asInteractiveGateway(gateway);
 
     if (reply.requestContact === true && interactive?.requestContact !== undefined) {
       const requested = await interactive.requestContact(incoming.channelUserId, reply.text);
       if (requested.ok) {
-        return;
+        return requested;
       }
-      // El texto base ya se entregó arriba; si pedir el contacto falla, el
-      // usuario igual puede escribir su número a mano (fallback ya soportado
-      // por el paso 'phone' de la máquina de pasos).
+      // Si pedir el contacto falla, la persona aún puede escribir el número
+      // a mano (fallback del mismo paso).
+      return this.sendText(gateway, incoming, reply.text);
     }
 
     if (reply.options === undefined || reply.options.length === 0) {
-      return;
+      return this.sendText(gateway, incoming, reply.text);
     }
 
     if (interactive !== undefined && interactive.supportsInteractive()) {
@@ -368,11 +374,11 @@ export class HandleIncomingMessage {
         layout: reply.layout ?? 'buttons',
       });
       if (sent.ok) {
-        return;
+        return sent;
       }
     }
 
-    await this.sendText(gateway, incoming, renderNumberedFallback(reply.text, reply.options));
+    return this.sendText(gateway, incoming, renderNumberedFallback(reply.text, reply.options));
   }
 
   /**
