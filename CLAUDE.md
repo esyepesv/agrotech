@@ -36,7 +36,7 @@ Backend de **PorcIA**, asistente porcícola para pequeños/medianos productores 
 
 ## Estado operativo a tener en cuenta
 
-- Migraciones en `supabase/migrations/` son idempotentes y se aplican **manualmente** (nunca solas). `0001`–`0005` están **aplicadas en producción** (las dos últimas el 2026-07-22). Toda migración nueva nace pendiente: verificar antes de asumir que una tabla existe.
+- Migraciones en `supabase/migrations/` son idempotentes y se aplican **manualmente** (nunca solas). `0001`–`0006` están **aplicadas en producción** (la 0006 el 2026-07-22). Toda migración nueva nace pendiente: verificar antes de asumir que una tabla existe.
 - WhatsApp está limitado a **números de prueba** (Business Verification de Meta pendiente). Telegram es el canal de desarrollo.
 - No hay usuarios reales registrados: cambios de contrato de dominio de v1.1 (p. ej. renombrar roles) son de bajo riesgo todavía.
 - WhatsApp no permite iniciar conversaciones fuera de la ventana de 24 h sin plantillas pre-aprobadas — ninguna feature puede depender de push saliente (ver `arquitectura-v1.2.md` §9).

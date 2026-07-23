@@ -1,4 +1,4 @@
--- PENDIENTE DE APLICAR. Aditiva sobre 0004: separa "de qué celular dijo ser
+-- APLICADA EN PRODUCCIÓN el 2026-07-22. Aditiva sobre 0004: separa "de qué celular dijo ser
 -- dueño" (phone_hash, siempre) de "qué identidad de chat quedó probada"
 -- (channel_user_hash / telegram_user_hash). Sin esa separación, al quitar el
 -- OTP del registro no quedaba ningún dato con el que reconocer a la persona
