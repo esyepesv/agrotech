@@ -32,6 +32,12 @@ export type RegistrationStep =
   | 'workerFarmSearch'
   | 'workerFarmPick'
   | 'confirm'
+  // Elegir QUÉ corregir en vez de reiniciar: antes "Corregir" descartaba el
+  // borrador entero y volvía a la primera pregunta.
+  | 'correctPick'
+  // Confirmación de "cancelar": el borrador puede llevar once respuestas,
+  // demasiado para perderlo por una palabra suelta.
+  | 'cancelConfirm'
   | 'anotherFarmPrompt'
   | 'approveWorker';
 
@@ -101,6 +107,7 @@ export interface RegistrationPartial {
 
   readonly anotherFarmDecision?: 'yes' | 'no';
   readonly confirmDecision?: 'confirm' | 'correct' | 'cancel';
+  readonly cancelDecision?: 'yes' | 'no';
 }
 
 export interface RegistrationPromptContext {
@@ -179,6 +186,18 @@ function workerFarmPickOptions(results: readonly FarmSearchOption[]): readonly R
   ];
 }
 
+const CANCEL_CONFIRM_OPTIONS: readonly ReplyOption[] = [
+  { id: optionId('cancelConfirm', 'yes'), label: 'Sí, cancelar' },
+  { id: optionId('cancelConfirm', 'no'), label: 'No, seguir' },
+];
+
+function correctPickOptions(partial: RegistrationPartial): readonly ReplyOption[] {
+  return correctableSteps(partial).map((step) => ({
+    id: optionId('correctPick', step),
+    label: STEP_LABELS[step] ?? step,
+  }));
+}
+
 /**
  * Opciones cerradas del paso vigente, o `undefined` si es de texto libre.
  * Fuente única para `promptFor` (qué botones pintar) y `applyAnswer` (contra
@@ -197,6 +216,10 @@ export function optionsForStep(
       return ID_TYPE_OPTIONS;
     case 'confirm':
       return CONFIRM_OPTIONS;
+    case 'correctPick':
+      return correctPickOptions(partial);
+    case 'cancelConfirm':
+      return CANCEL_CONFIRM_OPTIONS;
     case 'anotherFarmPrompt':
       return ANOTHER_FARM_OPTIONS;
     case 'approveWorker':
@@ -210,6 +233,191 @@ export function optionsForStep(
     default:
       return undefined;
   }
+}
+
+// ── Retroceder y corregir ─────────────────────────────────────────────────
+// Todo esto se apoya en `nextStep`: como calcula el siguiente campo FALTANTE,
+// "borrar un campo" equivale a "volver a esa pregunta". No hace falta un
+// índice de posición aparte.
+
+const OWNER_STEP_ORDER: readonly RegistrationStep[] = [
+  'role',
+  'phone',
+  'farmName',
+  'legalType',
+  'taxId',
+  'location',
+  'cebaCapacity',
+  'breedingCapacity',
+  'totalCapacity',
+  'sanitaryRegistry',
+  'idType',
+  'idNumber',
+  'email',
+];
+
+const WORKER_STEP_ORDER: readonly RegistrationStep[] = [
+  'role',
+  'phone',
+  'idType',
+  'idNumber',
+  'email',
+  'workerFarmSearch',
+];
+
+function stepOrder(partial: RegistrationPartial): readonly RegistrationStep[] {
+  return partial.role === 'trabajador' ? WORKER_STEP_ORDER : OWNER_STEP_ORDER;
+}
+
+/** Etiquetas de los pasos que la persona puede corregir desde el resumen. */
+const STEP_LABELS: Partial<Record<RegistrationStep, string>> = {
+  phone: 'Celular',
+  farmName: 'Nombre de la finca',
+  legalType: 'Tipo de persona',
+  taxId: 'Identificación tributaria',
+  location: 'Ubicación',
+  cebaCapacity: 'Capacidad de ceba',
+  breedingCapacity: 'Capacidad de cría',
+  totalCapacity: 'Capacidad total',
+  sanitaryRegistry: 'Registro sanitario',
+  idType: 'Tipo de documento',
+  idNumber: 'Número de documento',
+  email: 'Correo electrónico',
+  workerFarmSearch: 'Finca a la que te unes',
+};
+
+/** Borra el dato de un paso para que `nextStep` vuelva a preguntarlo. */
+export function clearStepField(
+  partial: RegistrationPartial,
+  step: RegistrationStep,
+): RegistrationPartial {
+  switch (step) {
+    case 'role':
+      return { ...partial, role: undefined };
+    case 'phone':
+      // El celular detectado por el canal se vuelve a aceptar solo si el
+      // canal lo aporta otra vez; aquí se olvida también su verificación.
+      return { ...partial, phone: undefined, phoneVerified: undefined };
+    case 'farmName':
+      return { ...partial, farmName: undefined };
+    case 'legalType':
+      return { ...partial, legalType: undefined };
+    case 'taxId':
+      return { ...partial, taxId: undefined };
+    case 'location':
+      return { ...partial, location: undefined };
+    case 'cebaCapacity':
+      return { ...partial, cebaCapacity: undefined };
+    case 'breedingCapacity':
+      return { ...partial, breedingCapacity: undefined };
+    case 'totalCapacity':
+      return { ...partial, totalCapacity: undefined };
+    case 'sanitaryRegistry':
+      return { ...partial, sanitaryRegistry: undefined };
+    case 'idType':
+      return { ...partial, idType: undefined };
+    case 'idNumber':
+      return { ...partial, idNumber: undefined };
+    case 'email':
+      return { ...partial, email: undefined };
+    case 'workerFarmSearch':
+    case 'workerFarmPick':
+      return {
+        ...partial,
+        workerFarmQuery: undefined,
+        workerFarmResults: undefined,
+        selectedFarmId: undefined,
+        selectedFarmName: undefined,
+      };
+    default:
+      return partial;
+  }
+}
+
+/**
+ * Paso anterior al vigente según el orden del rol. `undefined` si ya se está
+ * en el primero (no hay a dónde retroceder). Desde el resumen (`confirm`) el
+ * anterior es el último campo del recorrido.
+ */
+export function previousStep(
+  step: RegistrationStep,
+  partial: RegistrationPartial,
+): RegistrationStep | undefined {
+  const order = stepOrder(partial);
+  const index = step === 'confirm' ? order.length : order.indexOf(step);
+  if (index <= 0) {
+    return undefined;
+  }
+  return order[index - 1];
+}
+
+/** Pasos ya respondidos que tiene sentido ofrecer para corregir. */
+export function correctableSteps(partial: RegistrationPartial): readonly RegistrationStep[] {
+  return stepOrder(partial).filter((step) => {
+    if (STEP_LABELS[step] === undefined) return false;
+    // El celular probado por el canal no se corrige escribiendo otro: la
+    // identidad la da el canal, no el texto (§4.1.2).
+    if (step === 'phone' && partial.phoneVerified === true) return false;
+    return hasAnswer(partial, step);
+  });
+}
+
+function hasAnswer(partial: RegistrationPartial, step: RegistrationStep): boolean {
+  switch (step) {
+    case 'phone':
+      return partial.phone !== undefined;
+    case 'farmName':
+      return partial.farmName !== undefined;
+    case 'legalType':
+      return partial.legalType !== undefined;
+    case 'taxId':
+      return partial.taxId !== undefined;
+    case 'location':
+      return partial.location !== undefined;
+    case 'cebaCapacity':
+      return partial.cebaCapacity !== undefined;
+    case 'breedingCapacity':
+      return partial.breedingCapacity !== undefined;
+    case 'totalCapacity':
+      return partial.totalCapacity !== undefined;
+    case 'sanitaryRegistry':
+      return partial.sanitaryRegistry !== undefined;
+    case 'idType':
+      return partial.idType !== undefined;
+    case 'idNumber':
+      return partial.idNumber !== undefined;
+    case 'email':
+      return partial.email !== undefined;
+    case 'workerFarmSearch':
+      return partial.selectedFarmId !== undefined;
+    default:
+      return false;
+  }
+}
+
+export type GlobalCommand = 'back' | 'cancel';
+
+const BACK_WORDS = new Set(['atras', 'volver', 'regresar', 'anterior']);
+const CANCEL_WORDS = new Set(['cancelar', 'cancela', 'salir']);
+
+/**
+ * Comandos que valen en cualquier campo del recorrido. Antes no existían: con
+ * un registro en curso el orquestador manda TODO al paso vigente, así que
+ * escribir "cancelar" en la pregunta del nombre dejaba la finca llamándose
+ * "cancelar". Solo se reconocen en pasos de texto libre; los pasos de opción
+ * ya tienen sus propios botones.
+ */
+export function parseGlobalCommand(rawInput: string): GlobalCommand | undefined {
+  const normalized = rawInput
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z\s]/g, '')
+    .trim();
+  if (BACK_WORDS.has(normalized)) return 'back';
+  if (CANCEL_WORDS.has(normalized)) return 'cancel';
+  return undefined;
 }
 
 // ── nextStep: el corazón de la máquina ────────────────────────────────────
@@ -336,6 +544,10 @@ export function promptFor(
       return { text: 'Encontré estas fincas, ¿cuál es la tuya?', options, layout };
     case 'confirm':
       return { text: `${summaryOf(partial)} ¿Confirmo el registro?`, options, layout };
+    case 'correctPick':
+      return { text: '¿Qué dato quieres corregir?', options, layout };
+    case 'cancelConfirm':
+      return { text: '¿Seguro que quieres cancelar el registro? Se perderá lo que llevamos.', options, layout };
     case 'anotherFarmPrompt':
       return {
         text: 'Ya tienes una cuenta registrada. ¿Quieres registrar otra finca?',
@@ -483,6 +695,17 @@ export function applyAnswer(
       return applyOption(partial, step, rawInput, (value) => ({
         ...partial,
         confirmDecision: value as 'confirm' | 'correct' | 'cancel',
+      }));
+    case 'correctPick':
+      // Borra SOLO el campo elegido; el resto del borrador sobrevive y
+      // `nextStep` lleva de vuelta a esa pregunta.
+      return applyOption(partial, step, rawInput, (value) =>
+        clearStepField({ ...partial, confirmDecision: undefined }, value as RegistrationStep),
+      );
+    case 'cancelConfirm':
+      return applyOption(partial, step, rawInput, (value) => ({
+        ...partial,
+        cancelDecision: value as 'yes' | 'no',
       }));
     case 'anotherFarmPrompt':
       return applyOption(partial, step, rawInput, (value) => ({

@@ -68,11 +68,17 @@ interface SearchRequest {
   readonly ip: string;
 }
 
+/** Cuerpo + IP: la disponibilidad va por POST pero se limita por IP. */
+export interface IpBodyRequest extends BodyRequest {
+  readonly ip: string;
+}
+
 export interface RegistrationHandlers {
   readonly otpTransports: () => Promise<HttpResponse>;
   readonly requestOtp: (req: BodyRequest) => Promise<HttpResponse>;
   readonly verifyOtp: (req: BodyRequest) => Promise<HttpResponse>;
   readonly farmsSearch: (req: SearchRequest) => Promise<HttpResponse>;
+  readonly checkAvailability: (req: IpBodyRequest) => Promise<HttpResponse>;
   readonly register: (req: BodyRequest) => Promise<HttpResponse>;
 }
 
@@ -379,6 +385,60 @@ async function handleFarmsSearch(
   return { status: 200, body: { results } };
 }
 
+const checkAvailabilityBodySchema = z.union([
+  z.object({
+    identificationType: identificationTypeSchema,
+    identificationNumber: z.string().trim().min(1),
+  }),
+  z.object({ email: z.string().trim().email() }),
+]);
+
+/**
+ * ¿Está libre esta identificación / este correo? Sirve para avisar en el
+ * formulario antes de que la persona llene tres pasos y choque al final.
+ *
+ * Es POST y no GET a propósito: una cédula o un correo en el query string
+ * queda en los registros de acceso del proxy. Y va con cuota por IP porque
+ * responde sí/no sobre datos ajenos — es un oráculo de cuentas existentes
+ * (compromiso aceptado explícitamente al priorizar el aviso temprano); la
+ * cuota es lo que impide barrerlo a escala.
+ */
+async function handleCheckAvailability(
+  deps: RegistrationHttpDeps,
+  limiter: OtpRateLimiter,
+  rawBody: unknown,
+  ip: string,
+): Promise<HttpResponse> {
+  const parsed = checkAvailabilityBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return errorResponse(400, 'validation', 'Revisa los datos del formulario.');
+  }
+
+  const decision = limiter.check(ip);
+  if (!decision.allowed) {
+    return errorResponse(
+      429,
+      'rate_limited',
+      'Hiciste muchas consultas seguidas, espera un momento.',
+      decision.retryAfterSeconds !== undefined
+        ? { 'Retry-After': String(decision.retryAfterSeconds) }
+        : undefined,
+    );
+  }
+
+  const existing =
+    'email' in parsed.data
+      ? await deps.farmRepository.findUserByEmail(
+          normalizeDestination(parsed.data.email, 'email'),
+        )
+      : await deps.farmRepository.findUserByIdentification(
+          parsed.data.identificationType,
+          parsed.data.identificationNumber,
+        );
+
+  return { status: 200, body: { available: existing === null } };
+}
+
 async function handleRegister(deps: RegistrationHttpDeps, rawBody: unknown): Promise<HttpResponse> {
   const parsed = registerBodySchema.safeParse(rawBody);
   if (!parsed.success) {
@@ -459,6 +519,8 @@ function registrationErrorResponse(error: RegistrationError): HttpResponse {
   switch (error.kind) {
     case 'duplicate_identification':
       return errorResponse(409, 'duplicate_identification', error.message);
+    case 'duplicate_email':
+      return errorResponse(409, 'duplicate_email', error.message);
     case 'duplicate_farm':
       return errorResponse(409, 'duplicate_farm', error.message);
     case 'already_member':
@@ -503,6 +565,7 @@ export function createRegistrationHandlers(deps: RegistrationHttpDeps): Registra
     requestOtp: (req) => handleRequestOtp(deps, requestOtpLimiter, req.body),
     verifyOtp: (req) => handleVerifyOtp(deps, req.body),
     farmsSearch: (req) => handleFarmsSearch(deps, farmsSearchLimiter, req.query, req.ip),
+    checkAvailability: (req) => handleCheckAvailability(deps, farmsSearchLimiter, req.body, req.ip),
     register: (req) => handleRegister(deps, req.body),
   };
 }
@@ -549,6 +612,12 @@ export function registerRegistrationRoutes(app: FastifyInstance, deps: Registrat
     );
     scope.get('/register/farms/search', async (request, reply) =>
       sendHttpResponse(reply, await handlers.farmsSearch({ query: request.query, ip: request.ip })),
+    );
+    scope.post('/register/check-availability', async (request, reply) =>
+      sendHttpResponse(
+        reply,
+        await handlers.checkAvailability({ body: request.body, ip: request.ip }),
+      ),
     );
     scope.post('/register', async (request, reply) =>
       sendHttpResponse(reply, await handlers.register({ body: request.body })),

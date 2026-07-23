@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../../application/ports/clock.js';
 import type { LeadNotifier } from '../../application/ports/lead-notifier.js';
-import type { Lead, LeadStore } from '../../application/ports/lead-store.js';
+import type { LeadStore } from '../../application/ports/lead-store.js';
 import { OtpRateLimiter } from './otp-rate-limiter.js';
 
 export interface LeadHttpDeps {
@@ -52,12 +52,14 @@ export function createLeadHandlers(deps: LeadHttpDeps): LeadHandlers {
       }
       const parsed = leadSchema.safeParse(request.body);
       if (!parsed.success) return errorResponse(400, 'validation', 'Revisa los datos requeridos e inténtalo de nuevo.');
-      if (parsed.data.website !== undefined && parsed.data.website.length > 0) return { status: 201, body: { ok: true } };
+      // `website` es el honeypot: se separa del resto (que es justo el Lead a
+      // guardar) y se usa aquí mismo, así no queda una variable descartada.
+      const { website, ...lead } = parsed.data;
+      if (website !== undefined && website.length > 0) return { status: 201, body: { ok: true } };
 
-      const { website: _website, ...lead } = parsed.data;
-      const stored = await deps.store.save(lead as Lead, request.idempotencyKey);
+      const stored = await deps.store.save(lead, request.idempotencyKey);
       if (stored === 'duplicate') return { status: 201, body: { ok: true } };
-      if (!(await deps.notifier.notify(lead as Lead))) {
+      if (!(await deps.notifier.notify(lead))) {
         return errorResponse(503, 'notification_failed', 'Guardamos tu contacto, pero no pudimos confirmar el envío. Inténtalo de nuevo más tarde.');
       }
       return { status: 201, body: { ok: true } };

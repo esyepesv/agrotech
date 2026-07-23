@@ -184,6 +184,85 @@ describe('RegisterFarmAndUser', () => {
     expect(second.error.kind).toBe('duplicate_identification');
   });
 
+  it('duplicate_identification: un tercero usa una cédula ajena sin probar nada → se rechaza, no hereda la cuenta', async () => {
+    const h = buildHarness();
+    // La víctima se registra por web: el adaptador web siempre manda
+    // phoneVerified:false, así que su cuenta queda SIN channel_user_hash.
+    const victim = await h.useCase.submit({
+      kind: 'owner',
+      user: userInput({ phoneVerified: false, phone: '3001111111' }),
+      farm: farmInput(),
+    });
+    expect(victim.ok).toBe(true);
+    if (!victim.ok) return;
+    expect(victim.value.user.channelUserHash).toBeUndefined();
+
+    // Un tercero conoce esa cédula y se registra con SU propio celular y correo.
+    const attacker = await h.useCase.submit({
+      kind: 'owner',
+      user: userInput({
+        phoneVerified: false,
+        phone: '3002222222',
+        email: 'tercero@example.com',
+      }),
+      farm: farmInput({ name: 'Finca del tercero', taxId: '111222333' }),
+    });
+
+    expect(attacker.ok).toBe(false);
+    if (attacker.ok) return;
+    expect(attacker.error.kind).toBe('duplicate_identification');
+  });
+
+  it('duplicate_identification: verificar un celular distinto al declarado no permite tomar una cuenta ajena', async () => {
+    const h = buildHarness();
+    const victim = await h.useCase.submit({
+      kind: 'owner',
+      user: userInput({ phoneVerified: false, phone: '3001111111' }),
+      farm: farmInput(),
+    });
+    expect(victim.ok).toBe(true);
+
+    // Verifica su PROPIO celular, pero con la cédula de la víctima: el celular
+    // probado no coincide con el que aquella declaró (phone_hash).
+    const attacker = await h.useCase.submit({
+      kind: 'owner',
+      user: userInput({
+        phoneVerified: true,
+        phone: '3002222222',
+        email: 'tercero@example.com',
+      }),
+      farm: farmInput({ name: 'Finca del tercero', taxId: '111222333' }),
+    });
+
+    expect(attacker.ok).toBe(false);
+    if (attacker.ok) return;
+    expect(attacker.error.kind).toBe('duplicate_identification');
+  });
+
+  it('duplicate_email: otra persona intenta registrarse con un correo ya usado', async () => {
+    const h = buildHarness();
+    const first = await h.useCase.submit({
+      kind: 'owner',
+      user: userInput({ email: 'compartido@example.com' }),
+      farm: farmInput(),
+    });
+    expect(first.ok).toBe(true);
+
+    const second = await h.useCase.submit({
+      kind: 'owner',
+      user: userInput({
+        identificationNumber: '999888777',
+        phone: '3007777777',
+        email: 'compartido@example.com',
+      }),
+      farm: farmInput({ name: 'Otra finca', taxId: '111222333' }),
+    });
+
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.error.kind).toBe('duplicate_email');
+  });
+
   it('duplicate_farm: misma persona registra la misma finca (mismo taxId + nombre) dos veces', async () => {
     const h = buildHarness();
     const first = await h.useCase.submit({
@@ -212,7 +291,11 @@ describe('RegisterFarmAndUser', () => {
 
     const result = await h.useCase.submit({
       kind: 'worker',
-      user: userInput({ identificationNumber: '900123456', phone: '3009876543' }),
+      user: userInput({
+        identificationNumber: '900123456',
+        phone: '3009876543',
+        email: 'trabajador@example.com',
+      }),
       farmId: owner.value.farm.id,
     });
 
@@ -236,7 +319,11 @@ describe('RegisterFarmAndUser', () => {
 
     const result = await h.useCase.submit({
       kind: 'worker',
-      user: userInput({ identificationNumber: '900123456', phone: '3009876543' }),
+      user: userInput({
+        identificationNumber: '900123456',
+        phone: '3009876543',
+        email: 'trabajador@example.com',
+      }),
       farmId: owner.value.farm.id,
     });
 
@@ -268,7 +355,11 @@ describe('RegisterFarmAndUser', () => {
 
     const workerInput = {
       kind: 'worker' as const,
-      user: userInput({ identificationNumber: '900123456', phone: '3009876543' }),
+      user: userInput({
+        identificationNumber: '900123456',
+        phone: '3009876543',
+        email: 'trabajador@example.com',
+      }),
       farmId: owner.value.farm.id,
     };
     const first = await h.useCase.submit(workerInput);

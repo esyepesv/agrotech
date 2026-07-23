@@ -181,11 +181,15 @@ export class SupabaseFarmRepository implements FarmRepository {
   }
 
   async findUserByEmail(email: string): Promise<AppUser | null> {
+    // `ilike` sin comodines = igualdad sin distinguir mayúsculas, para
+    // coincidir con el índice único `app_user_email_idx on (lower(email))`:
+    // con `eq`, una fila guardada con otra caja no se encontraría aquí y sin
+    // embargo el índice sí rechazaría el insert (500 en vez de 409).
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { data, error } = await this.client
       .from(APP_USER_TABLE)
       .select('*')
-      .eq('email', email)
+      .ilike('email', email)
       .maybeSingle();
     if (error !== null || data === null) {
       return null;

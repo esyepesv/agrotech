@@ -59,6 +59,7 @@ export type RegisterFarmAndUserInput = RegisterOwnerInput | RegisterWorkerInput;
 
 export type RegistrationError =
   | { readonly kind: 'duplicate_identification'; readonly message: string }
+  | { readonly kind: 'duplicate_email'; readonly message: string }
   | { readonly kind: 'duplicate_farm'; readonly message: string }
   | { readonly kind: 'already_member'; readonly message: string; readonly farmName: string }
   | { readonly kind: 'farm_not_found'; readonly message: string }

@@ -82,8 +82,13 @@ export class LoginWithOtp {
     }
 
     const memberships = await this.deps.farmRepository.findFarmsByUser(user.id);
-    const activeMembership = memberships.find((membership) => membership.operator.status === 'activo');
-    if (activeMembership === undefined) {
+    // Se prefiere una membresía activa, pero una 'pendiente' también deja
+    // entrar: un trabajador cuya solicitud aún no aprueban SÍ tiene cuenta, y
+    // antes recibía "No pudimos validar esos datos" —el mismo mensaje que un
+    // código equivocado—, así que parecía un login roto y no una espera.
+    // Los permisos siguen colgando de operator.status, no de tener sesión.
+    const membership = memberships.find((m) => m.operator.status === 'activo') ?? memberships[0];
+    if (membership === undefined) {
       return err(INVALID_CREDENTIALS);
     }
 
@@ -91,9 +96,9 @@ export class LoginWithOtp {
     const token = this.deps.sessionIssuer.issue(
       {
         userId: user.id,
-        operatorId: activeMembership.operator.id,
-        farmId: activeMembership.farm.id,
-        role: activeMembership.operator.role,
+        operatorId: membership.operator.id,
+        farmId: membership.farm.id,
+        role: membership.operator.role,
       },
       this.deps.sessionTtlSeconds,
     );

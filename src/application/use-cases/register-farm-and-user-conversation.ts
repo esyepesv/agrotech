@@ -1,8 +1,12 @@
 import type { RegistrationStep } from '../../domain/farm/registration-conversation.js';
 import {
   applyAnswer,
+  clearStepField,
+  correctableSteps,
   nextStep,
   optionsForStep,
+  parseGlobalCommand,
+  previousStep,
   promptFor,
   type RegistrationPartial,
   type RegistrationPrompt,
@@ -33,6 +37,19 @@ const DEFAULT_PENDING_TTL_SECONDS = 1800;
 const MAX_OPTION_ATTEMPTS = 3;
 
 const OBSOLETE_OPTION_MESSAGE = 'Esa opción ya no aplica.';
+const NO_PREVIOUS_STEP_MESSAGE = 'Esta es la primera pregunta, no hay a dónde volver.';
+
+/**
+ * Pasos que ya resuelven "cancelar"/"volver" con sus propios botones: ahí no
+ * se interceptan los comandos globales para no pisar su decisión.
+ */
+const STEPS_WITH_OWN_DECISION: ReadonlySet<RegistrationStep> = new Set<RegistrationStep>([
+  'confirm',
+  'correctPick',
+  'cancelConfirm',
+  'approveWorker',
+  'anotherFarmPrompt',
+]);
 const CONTINUE_ON_WEB_MESSAGE =
   'No logramos entendernos por aquí. Si prefieres, puedes completar tu registro desde la página web.';
 const CANCELLED_MESSAGE =
@@ -148,6 +165,22 @@ export class RegisterFarmAndUserConversation implements OnboardingConversation {
       return prefixReply(OBSOLETE_OPTION_MESSAGE, promptFor(step, partial, promptCtx(ctx)));
     }
 
+    // "atrás" y "cancelar" valen en cualquier pregunta del recorrido. Se
+    // miran ANTES de aplicar la respuesta: si no, con un registro en curso
+    // toda palabra se guarda como valor del campo vigente (escribir
+    // "cancelar" en el nombre dejaba la finca llamándose "cancelar").
+    // Los pasos con decisión propia (resumen, aprobación) no se tocan: ya
+    // tienen sus botones.
+    if (!STEPS_WITH_OWN_DECISION.has(step)) {
+      const command = parseGlobalCommand(text);
+      if (command === 'cancel') {
+        return this.advance(channelUserHash, partial, ctx, 'cancelConfirm');
+      }
+      if (command === 'back') {
+        return this.handleBack(channelUserHash, partial, step, ctx);
+      }
+    }
+
     switch (step) {
       case 'approveWorker':
         return this.handleApproveWorkerStep(channelUserHash, partial, text, ctx);
@@ -155,9 +188,64 @@ export class RegisterFarmAndUserConversation implements OnboardingConversation {
         return this.handleAnotherFarmStep(channelUserHash, partial, text, ctx);
       case 'confirm':
         return this.handleConfirmStep(channelUserHash, partial, text, ctx);
+      case 'correctPick':
+        return this.handleCorrectPickStep(channelUserHash, partial, text, ctx);
+      case 'cancelConfirm':
+        return this.handleCancelConfirmStep(channelUserHash, partial, text, ctx);
       default:
         return this.handleFieldStep(channelUserHash, partial, step, text, ctx);
     }
+  }
+
+  /** Retrocede una pregunta borrando la respuesta anterior. */
+  private async handleBack(
+    channelUserHash: string,
+    partial: RegistrationPartial,
+    step: RegistrationStep,
+    ctx: OnboardingContext,
+  ): Promise<FarmReply> {
+    const target = previousStep(step, partial);
+    if (target === undefined) {
+      await this.saveDraft(channelUserHash, partial, step);
+      return prefixReply(NO_PREVIOUS_STEP_MESSAGE, promptFor(step, partial, promptCtx(ctx)));
+    }
+    const cleared = clearStepField({ ...partial, failedAttempts: 0 }, target);
+    return this.advance(channelUserHash, cleared, ctx, target);
+  }
+
+  private async handleCorrectPickStep(
+    channelUserHash: string,
+    partial: RegistrationPartial,
+    text: string,
+    ctx: OnboardingContext,
+  ): Promise<FarmReply> {
+    const applied = applyAnswer(partial, 'correctPick', text, { inputWasVoice: ctx.inputWasVoice });
+    if (!applied.ok) {
+      return this.handleStepError(channelUserHash, partial, 'correctPick', applied.error, ctx);
+    }
+    // El campo elegido quedó vacío: `nextStep` vuelve justo a esa pregunta y,
+    // al responderla, como no falta nada más, regresa solo al resumen.
+    return this.advance(channelUserHash, { ...applied.value, failedAttempts: 0 }, ctx);
+  }
+
+  private async handleCancelConfirmStep(
+    channelUserHash: string,
+    partial: RegistrationPartial,
+    text: string,
+    ctx: OnboardingContext,
+  ): Promise<FarmReply> {
+    const applied = applyAnswer(partial, 'cancelConfirm', text, {
+      inputWasVoice: ctx.inputWasVoice,
+    });
+    if (!applied.ok) {
+      return this.handleStepError(channelUserHash, partial, 'cancelConfirm', applied.error, ctx);
+    }
+    if (applied.value.cancelDecision === 'yes') {
+      // No se vuelve a guardar el borrador: `loadDraft` ya lo consumió.
+      return { text: CANCELLED_MESSAGE };
+    }
+    const resumed = { ...partial, cancelDecision: undefined, failedAttempts: 0 };
+    return this.advance(channelUserHash, resumed, ctx);
   }
 
   private async handleFieldStep(
@@ -331,12 +419,20 @@ export class RegisterFarmAndUserConversation implements OnboardingConversation {
       return { text: CANCELLED_MESSAGE };
     }
     if (decided.confirmDecision === 'correct') {
-      return this.advance(channelUserHash, {}, ctx, 'role');
+      // Antes esto reiniciaba con un borrador vacío: once respuestas a la
+      // basura por querer arreglar una. Ahora se elige qué corregir y el
+      // resto sobrevive.
+      if (correctableSteps(decided).length === 0) {
+        return this.advance(channelUserHash, decided, ctx, 'confirm');
+      }
+      return this.advance(channelUserHash, decided, ctx, 'correctPick');
     }
 
     const input = buildRegisterInput(decided, ctx);
     if (input === undefined) {
-      return this.advance(channelUserHash, {}, ctx, 'role');
+      // Falta algún dato para armar el registro: se vuelve a preguntar SOLO
+      // lo que falte, conservando lo demás.
+      return this.advance(channelUserHash, decided, ctx);
     }
 
     const result = await this.deps.registerFarmAndUser.submit(input);
@@ -352,24 +448,35 @@ export class RegisterFarmAndUserConversation implements OnboardingConversation {
     error: RegistrationError,
     ctx: OnboardingContext,
   ): Promise<FarmReply> {
+    void ctx; // el reintento reutiliza el mismo ctx en el próximo turno
+    // En TODOS los casos se vuelve a guardar el borrador: `loadDraft` lo
+    // consumió al empezar el turno (takePending), así que no reponerlo
+    // obligaba a repetir el registro entero por un dato repetido.
     switch (error.kind) {
       case 'duplicate_identification':
-        return { text: `${error.message} Si crees que es un error, contacta a soporte.` };
-      case 'duplicate_farm':
+        await this.saveDraft(channelUserHash, partial, 'confirm');
         return {
-          text: `${error.message} Escríbeme "registrarme" si quieres dar de alta una finca distinta.`,
+          text: `${error.message} Escribe "corregir" para revisar tus datos, o contacta a soporte si crees que es un error.`,
+        };
+      case 'duplicate_email':
+        await this.saveDraft(channelUserHash, partial, 'confirm');
+        return { text: `${error.message} Escribe "corregir" para usar otro correo.` };
+      case 'duplicate_farm':
+        await this.saveDraft(channelUserHash, partial, 'confirm');
+        return {
+          text: `${error.message} Escribe "corregir" para cambiar los datos de la finca.`,
         };
       case 'already_member':
         return { text: `${error.message} (${error.farmName})` };
       case 'farm_not_found':
-        return { text: `${error.message} Escríbeme "registrarme" para buscar de nuevo.` };
+        await this.saveDraft(channelUserHash, partial, 'confirm');
+        return { text: `${error.message} Escribe "corregir" para buscarla de nuevo.` };
       case 'validation': {
         await this.saveDraft(channelUserHash, partial, 'confirm');
-        return { text: `${error.message} Escribe "corregir" para reiniciar el registro.` };
+        return { text: `${error.message} Escribe "corregir" para arreglar ese dato.` };
       }
       case 'persistence': {
         await this.saveDraft(channelUserHash, partial, 'confirm');
-        void ctx; // el reintento reutiliza el mismo ctx en el próximo turno
         return { text: GENERIC_RETRY_MESSAGE };
       }
       default:

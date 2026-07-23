@@ -73,6 +73,46 @@ describe('LoginWithOtp', () => {
     }
   });
 
+  it('un trabajador con solicitud pendiente sí puede entrar (antes se le negaba como si el código estuviera mal)', async () => {
+    const clock = new FakeClock();
+    repo.seedRegistration(
+      {
+        id: 'u2',
+        identificationType: 'CC',
+        identificationNumber: '900111222',
+        phoneHash: 'h:+573009998888',
+        email: 'ana@finca.co',
+        createdAt: clock.now(),
+      },
+      {
+        id: 'f2',
+        name: 'Villa Clara',
+        config: { metaPartosPorAno: 2.5, region: 'CO' },
+        createdAt: clock.now(),
+      },
+      { id: 'o2', userId: 'u2', farmId: 'f2', role: 'trabajador', status: 'pendiente' },
+    );
+    await otpStore.saveCode(
+      { destination: 'ana@finca.co' },
+      {
+        destinationKind: 'email',
+        transport: 'email',
+        codeHash: '123456',
+        ttlSeconds: 300,
+        maxAttempts: 5,
+      },
+    );
+
+    const outcome = await useCase.verify({ identifier: 'ana@finca.co', code: '123456' });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.session.token).toBeTruthy();
+    expect(outcome.value.farms).toEqual([
+      { farmId: 'f2', farmName: 'Villa Clara', role: 'trabajador' },
+    ]);
+  });
+
   it('falla genérico con código correcto pero cuenta inexistente', async () => {
     const outcome = await useCase.verify({ identifier: 'nadie@finca.co', code: '123456' });
     expect(outcome.ok).toBe(false);

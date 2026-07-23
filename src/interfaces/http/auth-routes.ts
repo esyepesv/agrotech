@@ -27,9 +27,15 @@ export interface AuthenticatedBodyRequest extends BodyRequest {
   readonly authorization: string | undefined;
 }
 
+/** Petición autenticada sin cuerpo (GET /account/me). */
+export interface AuthenticatedRequest {
+  readonly authorization: string | undefined;
+}
+
 export interface AuthHandlers {
   readonly accountRequestOtp: (req: AuthenticatedBodyRequest) => Promise<HttpResponse>;
   readonly accountVerifyOtp: (req: AuthenticatedBodyRequest) => Promise<HttpResponse>;
+  readonly me: (req: AuthenticatedRequest) => Promise<HttpResponse>;
   readonly authDestinations: (req: BodyRequest) => Promise<HttpResponse>;
   readonly authRequestOtp: (req: BodyRequest) => Promise<HttpResponse>;
   readonly authVerifyOtp: (req: BodyRequest) => Promise<HttpResponse>;
@@ -138,6 +144,59 @@ async function handleAccountVerifyOtp(
   }
 }
 
+/**
+ * Perfil de la sesión vigente. Es el único endpoint de LECTURA del corte:
+ * sin él, recargar la página dejaba la sesión inservible (el token seguía en
+ * localStorage pero no había de dónde traer los datos) y el perfil tras
+ * iniciar sesión salía en blanco, porque solo se pintaba con lo que quedaba
+ * en memoria del wizard.
+ *
+ * El celular NO viaja: de él solo se guarda el HMAC (`phone_hash`), nunca el
+ * número en claro (regla de privacidad de v1). La interfaz muestra si está
+ * verificado, no el número.
+ */
+async function handleMe(deps: AuthHttpDeps, req: AuthenticatedRequest): Promise<HttpResponse> {
+  const userId = verifiedUserId(deps, req.authorization);
+  if (userId === undefined) {
+    return errorResponse(401, 'unauthorized', 'Tu sesión no es válida. Ingresa de nuevo.');
+  }
+
+  const user = await deps.registration.farmRepository.findUserById(userId);
+  if (user === null) {
+    return errorResponse(401, 'unauthorized', 'Tu sesión no es válida. Ingresa de nuevo.');
+  }
+
+  const memberships = await deps.registration.farmRepository.findFarmsByUser(user.id);
+  return {
+    status: 200,
+    body: {
+      user: {
+        id: user.id,
+        identificationType: user.identificationType,
+        identificationNumber: user.identificationNumber,
+        email: user.email,
+        displayName: user.displayName,
+        emailVerified: user.emailVerifiedAt !== undefined,
+        phoneVerified: user.phoneVerifiedAt !== undefined,
+      },
+      farms: memberships.map(({ operator, farm }) => ({
+        farmId: farm.id,
+        name: farm.name,
+        legalType: farm.legalType,
+        taxIdType: farm.taxIdType,
+        taxId: farm.taxId,
+        location: farm.location,
+        cebaCapacity: farm.cebaCapacity,
+        breedingCapacity: farm.breedingCapacity,
+        totalCapacity: farm.totalCapacity,
+        sanitaryRegistry: farm.sanitaryRegistry,
+        role: operator.role,
+        membershipStatus: operator.status,
+      })),
+    },
+  };
+}
+
 function otpSuccessResponse(deps: AuthHttpDeps): HttpResponse {
   return {
     status: 200,
@@ -232,6 +291,7 @@ export function createAuthHandlers(deps: AuthHttpDeps): AuthHandlers {
   return {
     accountRequestOtp: (req) => handleAccountRequestOtp(deps, requestOtpLimiter, req),
     accountVerifyOtp: (req) => handleAccountVerifyOtp(deps, req),
+    me: (req) => handleMe(deps, req),
     authDestinations: (req) => handleAuthDestinations(deps, req),
     authRequestOtp: (req) => handleAuthRequestOtp(deps, loginRequestOtpLimiter, req),
     authVerifyOtp: (req) => handleAuthVerifyOtp(deps, req),
@@ -255,11 +315,14 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthHttpDeps): vo
     if (deps.registration.config.corsAllowedOrigins.length > 0) {
       await scope.register(cors, {
         origin: [...deps.registration.config.corsAllowedOrigins],
-        methods: ['POST', 'OPTIONS'],
+        methods: ['GET', 'POST', 'OPTIONS'],
         allowedHeaders: ['Authorization', 'Content-Type'],
       });
     }
 
+    scope.get('/account/me', async (request, reply) =>
+      sendHttpResponse(reply, await handlers.me({ authorization: request.headers.authorization })),
+    );
     scope.post('/account/request-otp', async (request, reply) =>
       sendHttpResponse(
         reply,

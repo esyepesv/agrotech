@@ -42,6 +42,7 @@ export interface RegistrationOutcome {
 }
 
 const DUPLICATE_IDENTIFICATION_MESSAGE = 'Ya existe una cuenta con esa identificación.';
+const DUPLICATE_EMAIL_MESSAGE = 'Ya existe una cuenta con ese correo electrónico.';
 const DUPLICATE_FARM_MESSAGE = 'Esa finca ya está registrada en tu cuenta.';
 const FARM_NOT_FOUND_MESSAGE = 'No encontramos esa finca.';
 const ALREADY_MEMBER_MESSAGE = 'Ya tienes una solicitud/membresía en esa finca.';
@@ -79,17 +80,16 @@ export class RegisterFarmAndUser {
       user.identificationType,
       user.identificationNumber,
     );
-    // Identificación ya registrada por OTRA persona (hash de canal YA
-    // ATADO y distinto, p. ej. otro celular): se rechaza (spec 001 §5). Si
-    // el existente no tiene hash todavía (se registró solo con correo), no
-    // es un conflicto: se completa más abajo si este intento sí verificó el
-    // celular.
-    if (
-      existingUser !== null &&
-      existingUser.channelUserHash !== undefined &&
-      existingUser.channelUserHash !== channelUserHash
-    ) {
+    if (existingUser !== null && !isSamePerson(existingUser, user, channelUserHash)) {
       return err({ kind: 'duplicate_identification', message: DUPLICATE_IDENTIFICATION_MESSAGE });
+    }
+
+    // El correo es único (índice `app_user_email_idx`, migración 0006). Sin
+    // esta comprobación el choque salía como fallo de persistencia genérico
+    // (500) en vez de un 409 con un mensaje que la persona pueda accionar.
+    const emailOwner = await this.deps.farmRepository.findUserByEmail(user.email);
+    if (emailOwner !== null && emailOwner.id !== existingUser?.id) {
+      return err({ kind: 'duplicate_email', message: DUPLICATE_EMAIL_MESSAGE });
     }
 
     const resolvedExisting = await this.resolveExistingUser(
@@ -350,6 +350,35 @@ export class RegisterFarmAndUser {
       createdAt: now,
     }));
   }
+}
+
+/**
+ * ¿Quien envía este registro es la MISMA persona de la cuenta que ya usa esa
+ * identificación? Solo hay dos formas de demostrarlo, y ninguna se puede
+ * fingir sabiéndose una cédula ajena:
+ *
+ * 1. El canal ya está atado a esa cuenta y coincide (`channelUserHash`).
+ * 2. La cuenta todavía no tiene canal atado (se registró sin verificar), y
+ *    este intento **verifica** justo el mismo celular que aquella declaró
+ *    (`phoneHash`) — es el caso legítimo de "verifiqué solo el correo y
+ *    ahora completo mi identidad" (spec 001 §4.3).
+ *
+ * Todo lo demás es un tercero usando una identificación ajena. Antes esto
+ * pasaba de largo: como el registro web manda siempre `phoneVerified:false`,
+ * ninguna cuenta creada por web tenía `channelUserHash`, así que el guard
+ * anterior nunca se activaba y el intento caía en la rama multi-granja —
+ * agregándole la finca a la cuenta ajena y devolviendo una sesión a nombre
+ * de su dueño.
+ */
+function isSamePerson(
+  existing: AppUser,
+  incoming: NormalizedUserInput,
+  channelUserHash: string,
+): boolean {
+  if (existing.channelUserHash !== undefined) {
+    return existing.channelUserHash === channelUserHash;
+  }
+  return incoming.phoneVerified && existing.phoneHash === channelUserHash;
 }
 
 function sameName(a: string, b: string): boolean {
